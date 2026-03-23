@@ -76,3 +76,84 @@
 ## ⚠️ 절대 주의사항
 1. **API 키 하드코딩 금지:** `.env` 파일에 저장된 API 키나 크리덴셜을 절대로 코드에 직접 입력하여 커밋하지 마십시오.
 2. **테스트 후 PR:** 로컬 환경에서 모의 데이터(Mock)로 스크립트가 정상 실행되는 것을 확인한 뒤에만 PR을 요청하십시오.
+
+## [ Branch Timeline ]
+
+```
+main      hotfix       release       develop        feature (로컬 작업)
+  │                                     │
+  ├────────────────────────────────────>│ (최초 레포지토리 세팅 및 분기)
+  │                                     │
+  │                                     ├──> [feature/role1-cli-setup] (Role 1 작업 중)
+  │                                     ├──> [feature/role2-dast-parser] (Role 2 작업 중)
+  │                                     ├──> [feature/role3-llm-prompts] (Role 3 작업 중)
+  │                                     ├──> [feature/role4-ast-mapping] (Role 4 작업 중)
+  │                                     │
+  │                                     │<── (PR 승인 후 병합) Role 1
+  │                                     │<── (PR 승인 후 병합) Role 3
+  │                                     │<── (PR 승인 후 병합) Role 2
+  │                                     │<── (PR 승인 후 병합) Role 4
+  │                                     │
+  │                        ┌────────────┤ (통합 QA 준비)
+  │                        │            │
+  │                  [release/v1.0.0]   │
+  │                        │            │
+  │                        ├──> [버그 수정 커밋들...]
+  │                        │            │
+  │<───────────────────────┼───────────>│ (QA 완료 후 main과 develop 모두에 병합)
+  │                        │            │
+  │  [긴급 에러 발생!]      │            │
+  ├──────┐                 │            │
+  │ [hotfix/api-crash]     │            │
+  │      │                 │            │
+  │<─────┴─────────────────────────────>│ (긴급 패치 후 main과 develop 모두에 병합)
+  │                                     │
+ (v1.0.1 배포 유지)                    (v1.1.0 다음 기능 개발 계속...)
+ ```
+
+ ## 예상 프로젝트 구조
+ ```
+ apat-remediation-tool/
+├── .git/                           # Git 로컬 저장소 (자동 생성)
+├── .github/
+│   └── pull_request_template.md    # [추가] PR 생성 시 팀원들이 작성할 표준 양식
+├── .gitignore                      # API 키(.env), 가상환경(.venv), 캐시 등 제외 처리
+├── README.md                       # 프로젝트 개요, 설치 및 실행 가이드
+├── CONTRIBUTING.md                 # 깃 브랜치 전략, 커밋 룰, 협업 가이드라인
+├── requirements.txt                # Python 패키지 의존성 목록
+├── .env.example                    # 환경변수 템플릿 (API 키 구조만 명시, 실제 값 X)
+├── main.py                         # 애플리케이션 진입점 (CLI 실행용)
+│
+├── core/                           # [Role 1] 오케스트레이션 및 공통 규격
+│   ├── __init__.py
+│   ├── cli.py                      # Typer 기반 커맨드라인 인터페이스 및 진행률 UI
+│   ├── orchestrator.py             # FastAPI BackgroundTasks 기반 8단계 파이프라인 제어
+│   └── schemas.py                  # (SSOT) 팀원 공통 사용 Pydantic JSON 모델 규격
+│
+├── scanner/                        # [Role 2] 스캐너 제어 및 트래픽 검증
+│   ├── __init__.py
+│   ├── dast_engine.py              # Nuclei 스캐너 구동 및 결과 수집 래퍼
+│   ├── sast_engine.py              # Semgrep 스캐너 구동 및 결과 수집 래퍼
+│   ├── parser.py                   # HTTP 에러 패킷 및 HTML 슬라이싱 로직
+│   └── executor.py                 # LLM이 만든 익스플로잇 페이로드 발사 및 성공 검증
+│
+├── mapping/                        # [Role 4] 소스코드 역추적 및 조작
+│   ├── __init__.py
+│   ├── ast_parser.py               # 타겟 라우팅 파일 및 라인 번호 역추적 (AST)
+│   ├── correlation.py              # DAST URL과 SAST 라인 번호 교차 검증 및 병합
+│   └── patch_manager.py            # 패치 코드 임시 적용(Overwrite) 및 롤백 로직
+│
+├── intelligence/                   # [Role 3] LLM 추론 엔진 및 보고서 렌더링
+│   ├── __init__.py
+│   ├── llm_client.py               # OpenAI/Anthropic API 통신 및 JSON 출력 강제화
+│   ├── prompts.py                  # 정오탐 판단, 페이로드 생성, 패치 생성용 시스템 프롬프트
+│   ├── reporter.py                 # Markdown 및 PDF 보고서 생성 로직
+│   └── templates/                  # 보고서 디자인용 Jinja2 (.html, .md) 템플릿 폴더
+│
+└── target_app_mock/                # 테스트용 타겟 웹 서비스 (로컬 QA용)
+    ├── app.py                      # 더미 웹 서버 구동 파일
+    ├── requirements.txt            # 더미 서버용 패키지
+    └── src/
+        ├── auth.py                 # 의도적으로 하드코딩된 취약점 파일 (SQLi 등)
+        └── board.py                # 의도적으로 하드코딩된 취약점 파일 (XSS 등)
+```        
