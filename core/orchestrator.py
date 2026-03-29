@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime
 from typing import Dict
 from fastapi import FastAPI, BackgroundTasks, HTTPException
+from mapping.ast_parser import map_vulnerability_to_code
 
 # 앞서 작성한 core/schemas.py의 모든 규격을 임포트합니다.
 from core.schemas import (
@@ -65,47 +66,38 @@ async def mock_role3_verify(context: MappedContext) -> VerificationResult:
 # =====================================================================
 
 async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str):
-    """
-    백그라운드에서 8단계 워크플로우를 순차적으로 실행하며 상태를 갱신합니다.
-    """
     state = job_store[job_id]
     
     try:
-        # 1~2단계: 스캔 및 매핑 (Role 2 -> Role 4)
+        # 1단계: 스캔
         state.metadata.current_status = ScanStatus.SCANNING
         dast_res = await mock_role2_scan(target_url)
+        state.dast_result = dast_res
         
+        # 2단계: 코드 매핑 (Mock 함수 대신 진짜 AST 매핑 로직 적용)
         state.metadata.current_status = ScanStatus.MAPPING
-        mapped_ctx = await mock_role4_map_code(dast_res, source_dir)
+        mapped_ctx = await map_vulnerability_to_code(dast_res, source_dir)
         state.mapped_context = mapped_ctx
         
-        # 매핑 실패 시(오탐 확률 높음) 파이프라인 조기 종료 처리 로직 추가 가능
         if not mapped_ctx.is_mapped:
-            raise Exception("소스코드에서 대상 엔드포인트를 찾을 수 없습니다.")
-
-        # 3단계: 정오탐 판별 (Role 3)
+            raise Exception("소스코드에서 대상 엔드포인트 라우터를 찾을 수 없습니다.")
+            
+        # 3단계: LLM 판별
         state.metadata.current_status = ScanStatus.VERIFYING
-        verify_res = await mock_role3_verify(mapped_ctx)
-        state.verification = verify_res
-
-        # LLM이 오탐(False)이라고 판단하면 여기서 중단
-        if not verify_res.is_vulnerable:
-            state.metadata.current_status = ScanStatus.COMPLETED
-            state.metadata.end_time = datetime.utcnow()
-            return
-
-        # 4~7단계: (여기에 Role 2,3,4의 페이로드/패치/회귀테스트 로직을 순차 추가)
+        verification = await mock_role3_verify(mapped_ctx)
+        state.verification = verification
+        
+        # 4단계: 방어 코드 적용 및 회귀 테스트
         state.metadata.current_status = ScanStatus.TESTING
-        await asyncio.sleep(3) # 패치 및 테스트 딜레이 모사
-
-        # 모든 단계 정상 완료
+        regression = await mock_role4_test(verification)
+        state.regression_test = regression
+        
+        # 5단계: 완료
         state.metadata.current_status = ScanStatus.COMPLETED
-        state.metadata.end_time = datetime.utcnow()
-
+        
     except Exception as e:
-        # [중요] 파이프라인 에러 발생 시 앱이 죽지 않고 FAILED 상태로 기록됨
+        # 에러가 나면 상태를 FAILED로 바꾸고 에러 메시지를 기록
         state.metadata.current_status = ScanStatus.FAILED
-        state.metadata.end_time = datetime.utcnow()
         state.metadata.error_log = str(e)
 
 

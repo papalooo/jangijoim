@@ -4,3 +4,4 @@ typer==0.9.0
 rich==13.7.1
 requests==2.31.0
 pydantic==2.6.4
+python-multipart==0.0.9

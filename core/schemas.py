@@ -104,6 +104,7 @@ class RegressionTestResult(BaseModel):
 class FinalReportState(BaseModel):
     """비동기 큐에서 최종적으로 관리되는 마스터 상태 객체"""
     metadata: ScanMetadata
+    dast_result: Optional[DastSastResult] = None
     mapped_context: Optional[MappedContext] = None
     verification: Optional[VerificationResult] = None
     execution: Optional[ExecutionResult] = None

@@ -76,7 +76,8 @@ def start(
                     raise typer.Exit(code=1)
                 
                 time.sleep(1) # 1초 대기 후 다시 확인
-                
+            except typer.Exit:
+                raise
             except Exception as e:
                 progress.update(task_id, description=f"[bold red]상태 확인 중 통신 오류 발생: {e}[/bold red]")
                 time.sleep(2)
