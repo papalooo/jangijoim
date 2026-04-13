@@ -12,7 +12,7 @@ from core.schemas import (
     ExploitPayload, ExecutionResult, PatchProposal, RegressionTestResult
 )
 
-app = FastAPI(title="APAT Remediation Tool Pipeline")
+app = FastAPI(title="Jangijoim Remediation Tool Pipeline")
 
 # 인메모리 상태 저장소 (실제 운영 시에는 SQLite/Redis 등으로 대체 가능)
 # Job ID를 키(Key)로 하여 전체 상태(FinalReportState)를 추적합니다.
