@@ -1,4 +1,5 @@
 import os
+import asyncio
 import ast
 from urllib.parse import urlparse
 from typing import Optional, Dict, Any, Union
@@ -85,8 +86,9 @@ async def map_vulnerability_to_code(dast_data: DastSastResult, source_dir: str) 
     target_path = parsed_url.path
     target_method = dast_data.http_method
     
-    mapping_result = find_router_in_codebase(source_dir, target_path, target_method)
-    
+    mapping_result = await asyncio.to_thread(
+        find_router_in_codebase, source_dir, target_path, target_method
+    )
     return MappedContext(
         dast_data=dast_data,
         is_mapped=mapping_result.get("is_mapped", False),

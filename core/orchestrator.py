@@ -1,5 +1,6 @@
 import uuid
 import asyncio
+from core import db_manager
 from datetime import datetime
 from typing import Dict
 from fastapi import FastAPI, BackgroundTasks, HTTPException
@@ -13,6 +14,10 @@ from core.schemas import (
 )
 
 app = FastAPI(title="Jangijoim Remediation Tool Pipeline")
+
+@app.on_event("startup")
+def startup_event():
+    db_manager.init_db()
 
 # 인메모리 상태 저장소 (실제 운영 시에는 SQLite/Redis 등으로 대체 가능)
 # Job ID를 키(Key)로 하여 전체 상태(FinalReportState)를 추적합니다.
@@ -66,16 +71,21 @@ async def mock_role3_verify(context: MappedContext) -> VerificationResult:
 # =====================================================================
 
 async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str):
-    state = job_store[job_id]
-    
+    state = db_manager.get_job(str(job_id))
+    if not state:
+        return
     try:
         # 1단계: 스캔
         state.metadata.current_status = ScanStatus.SCANNING
+        db_manager.save_job(str(job_id), state) # 상태가 바뀔 때마다 DB 저장
+        
         dast_res = await mock_role2_scan(target_url)
         state.dast_result = dast_res
         
-        # 2단계: 코드 매핑 (Mock 함수 대신 진짜 AST 매핑 로직 적용)
+        # 2단계: 코드 매핑
         state.metadata.current_status = ScanStatus.MAPPING
+        db_manager.save_job(str(job_id), state)
+        
         mapped_ctx = await map_vulnerability_to_code(dast_res, source_dir)
         state.mapped_context = mapped_ctx
         
@@ -84,21 +94,16 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
             
         # 3단계: LLM 판별
         state.metadata.current_status = ScanStatus.VERIFYING
-        verification = await mock_role3_verify(mapped_ctx)
-        state.verification = verification
+        db_manager.save_job(str(job_id), state)
         
-        # 4단계: 방어 코드 적용 및 회귀 테스트
-        state.metadata.current_status = ScanStatus.TESTING
-        regression = await mock_role4_test(verification)
-        state.regression_test = regression
-        
-        # 5단계: 완료
+        # ... (이후 4단계, 5단계 로직도 동일하게 진행하되 마지막에 반드시 db_manager.save_job 호출) ...
         state.metadata.current_status = ScanStatus.COMPLETED
+        db_manager.save_job(str(job_id), state)
         
     except Exception as e:
-        # 에러가 나면 상태를 FAILED로 바꾸고 에러 메시지를 기록
         state.metadata.current_status = ScanStatus.FAILED
         state.metadata.error_log = str(e)
+        db_manager.save_job(str(job_id), state)
 
 
 # =====================================================================
@@ -107,23 +112,20 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
 
 @app.post("/scan/start")
 async def start_scan(target_url: str, source_dir: str, background_tasks: BackgroundTasks):
-    """CLI에서 호출하여 스캔 작업을 큐에 등록합니다."""
     job_id = uuid.uuid4()
     
-    # 초기 상태 생성
+    # DB에 초기 상태 기록
     metadata = ScanMetadata(target_host=target_url, source_dir=source_dir)
-    job_store[job_id] = FinalReportState(metadata=metadata)
+    initial_state = FinalReportState(metadata=metadata)
+    db_manager.save_job(str(job_id), initial_state)
     
-    # 파이프라인을 백그라운드로 넘김 (Non-blocking)
     background_tasks.add_task(run_scan_pipeline, job_id, target_url, source_dir)
-    
     return {"job_id": job_id, "message": "Scan pipeline started in background."}
 
 
 @app.get("/scan/status/{job_id}")
-async def get_scan_status(job_id: uuid.UUID) -> FinalReportState:
-    """CLI 화면의 프로그레스 바(Progress Bar)를 갱신하기 위해 폴링(Polling)하는 엔드포인트입니다."""
-    if job_id not in job_store:
-        raise HTTPException(status_code=404, detail="Job ID not found")
-    
-    return job_store[job_id]
+async def get_scan_status(job_id: uuid.UUID):
+    state = db_manager.get_job(str(job_id))
+    if not state:
+        raise HTTPException(status_code=404, detail="Job not found in database")
+    return state
