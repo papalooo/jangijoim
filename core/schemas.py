@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from uuid import UUID, uuid4
 
@@ -23,7 +23,7 @@ class ScanMetadata(BaseModel):
     job_id: UUID = Field(default_factory=uuid4, description="스캔 작업의 고유 ID")
     target_host: str = Field(..., description="타겟 최상위 도메인 (예: http://localhost:8000)")
     source_dir: str = Field(..., description="분석 대상 로컬 소스코드 최상위 경로")
-    start_time: datetime = Field(default_factory=datetime.utcnow)
+    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     end_time: Optional[datetime] = Field(None)
     current_status: ScanStatus = Field(default=ScanStatus.QUEUED)
     error_log: Optional[str] = Field(None, description="파이프라인 실패 시 스택 트레이스 기록")
@@ -75,6 +75,14 @@ class ExploitPayload(BaseModel):
     body: Optional[str] = None
     expected_success_regex: str = Field(..., description="공격 성공 증명 정규식 (예: 'SQL syntax.*MySQL')")
 
+class LlmVerification(BaseModel):
+    """4중 멀티 에이전트 파이프라인의 최종 통합 출력 스키마"""
+    triager_result: VerificationResult
+    red_teamer_payload: ExploitPayload
+    blue_teamer_patch: PatchProposal
+    qa_passed: bool
+    qa_feedback: str
+    
 # -----------------------------------------------------------------
 # [Phase 4] 실행, 패치 및 회귀 테스트 (Role 2, Role 3, Role 4)
 # -----------------------------------------------------------------

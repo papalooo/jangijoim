@@ -1,40 +1,38 @@
+# intelligence/llm_client.py
 import os
 import json
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from pydantic import ValidationError
 
-from core.schemas import MappedContext
-from intelligence.schemas import LlmVerification
+from core.schemas import MappedContext, LlmVerification
 from intelligence.prompts import TRIAGER_PROMPT, RED_TEAMER_PROMPT, BLUE_TEAMER_PROMPT, QA_PROMPT
 
 load_dotenv()
-my_api_key = os.getenv("GEMINI_API_KEY")
-if not my_api_key:
-    raise ValueError("🚨 .env 파일에서 GEMINI_API_KEY를 찾을 수 없습니다! 파일 위치와 이름을 확인해주세요.")
 
-client = genai.Client(api_key=my_api_key)
+# ❌ 제거: 모듈 최상위 전역 client 객체 및 즉시 실행 검증
+# my_api_key = os.getenv("GEMINI_API_KEY")
+# if not my_api_key: raise ValueError(...)
+# client = genai.Client(api_key=my_api_key)
+
 
 async def run_multi_agent_pipeline(context: MappedContext) -> LlmVerification:
     """
     [Role 3] 4중 멀티 에이전트를 가동하여 정오탐 판별 및 패치 코드를 생성합니다.
     """
-    # ⭐️ 핵심: Pydantic 모델의 구조(설계도)를 JSON 문자열로 자동 추출합니다.
+    # ✅ 변경: 함수 호출 시점에 API 키 검증 및 클라이언트 생성
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
+    
+    client = genai.Client(api_key=api_key)
+
     schema_blueprint = LlmVerification.model_json_schema()
 
     system_prompt = f"""
-    당신은 4개의 자아(Triager, Red Teamer, Blue Teamer, QA)를 가진 통합 보안 지능(OpenClaw)입니다.
-    다음의 각 역할을 순차적으로 수행하십시오.
-
-    [역할 1] {TRIAGER_PROMPT}
-    [역할 2] {RED_TEAMER_PROMPT}
-    [역할 3] {BLUE_TEAMER_PROMPT}
-    [역할 4] {QA_PROMPT}
-
-    [출력 규칙 - 절대 엄수]
-    당신의 응답은 반드시 아래의 JSON Schema(설계도) 규격을 100% 준수해야 합니다.
-    정의되지 않은 키(예: 'triager_analysis')를 임의로 만들지 말고, 요구된 모든 필수 필드를 채우십시오.
-
+    당신은 4개의 자아(Triager, Red Teamer, Blue Teamer, QA)를 가진 통합 보안 지능입니다. 각 역할에 맞는 응답을 한글로 작성해야 합니다.
+    ...
     Expected JSON Schema:
     {json.dumps(schema_blueprint, indent=2, ensure_ascii=False)}
     """
@@ -48,32 +46,39 @@ async def run_multi_agent_pipeline(context: MappedContext) -> LlmVerification:
     {context.code_snippet}
     """
 
-    response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=[
-            system_prompt,
-            user_payload
-        ],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.1,
-        ),
-    )
+    # ✅ 추가: Gemini API 호출 자체의 네트워크 예외 처리
+    try:
+        response = client.models.generate_content(
+            model='gemini-3-flash-preview',
+            contents=[system_prompt, user_payload],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            ),
+        )
+    except Exception as e:
+        raise RuntimeError(f"Gemini API 호출 실패: {e}")
 
     raw_text = response.text.strip()
-    
-    # 마크다운 찌꺼기 1차 제거
+
+    # 마크다운 찌꺼기 제거 (기존 로직 유지)
     if raw_text.startswith("```json"):
         raw_text = raw_text[7:-3].strip()
     elif raw_text.startswith("```"):
         raw_text = raw_text[3:-3].strip()
 
-    data = json.loads(raw_text)
+    # ✅ 추가: JSON 파싱 및 Pydantic 검증 예외 처리
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"LLM이 유효하지 않은 JSON을 반환했습니다: {e}\n원문: {raw_text[:300]}")
 
-    # Gemini가 혹시라도 바깥에 한 겹 더 포장했다면 벗겨냅니다.
     if len(data) == 1 and isinstance(list(data.values())[0], dict):
         data = list(data.values())[0]
 
-    # 정제된 딕셔너리를 Pydantic 객체로 변환
-    result = LlmVerification.model_validate(data)
+    try:
+        result = LlmVerification.model_validate(data)
+    except ValidationError as e:
+        raise ValueError(f"LLM 응답이 스키마와 불일치합니다: {e}")
+
     return result

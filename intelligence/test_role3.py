@@ -6,7 +6,7 @@ import sys
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from core.schemas import MappedContext, DastSastResult
+from core.schemas import MappedContext, DastSastResult, LlmVerification
 from intelligence.llm_client import run_multi_agent_pipeline
 
 async def main():
@@ -38,10 +38,13 @@ async def login_sqli(username: str = Form(...), password: str = Form(...)):
     print("🤖 멀티 에이전트 지능(OpenClaw) 가동! (약 5~15초 소요)")
     try:
         result = await run_multi_agent_pipeline(mock_context)
-        print("\n✅ [테스트 대성공] 완벽한 JSON 구조로 응답을 받았습니다:\n")
         print(result.model_dump_json(indent=2))
+    except ValueError as e:
+        print(f"❌ [스키마/파싱 오류]: {e}")
+    except RuntimeError as e:
+        print(f"❌ [API 호출 오류]: {e}")
     except Exception as e:
-        print(f"\n❌ [테스트 실패] 오류 발생: {e}")
+        print(f"❌ [알 수 없는 오류]: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

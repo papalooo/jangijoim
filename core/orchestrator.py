@@ -1,10 +1,12 @@
 import uuid
 import asyncio
+from pathlib import Path
 from core import db_manager
 from datetime import datetime
 from typing import Dict
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from mapping.ast_parser import map_vulnerability_to_code
+from intelligence.llm_client import run_multi_agent_pipeline
 
 # 앞서 작성한 core/schemas.py의 모든 규격을 임포트합니다.
 from core.schemas import (
@@ -92,11 +94,30 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
         if not mapped_ctx.is_mapped:
             raise Exception("소스코드에서 대상 엔드포인트 라우터를 찾을 수 없습니다.")
             
-        # 3단계: LLM 판별
+        # 3단계: LLM 멀티 에이전트 판별
         state.metadata.current_status = ScanStatus.VERIFYING
         db_manager.save_job(str(job_id), state)
+
+        # ✅ 변경: mock_role3_verify → 실제 run_multi_agent_pipeline 호출
+        # ✅ ValueError / RuntimeError를 개별 캐치해서 에러 로그를 구체적으로 남김
+        try:
+            llm_result = await run_multi_agent_pipeline(mapped_ctx)
+        except (ValueError, RuntimeError) as e:
+            # LLM 실패는 전체 파이프라인을 죽이지 않고 상태만 FAILED로 기록
+            raise Exception(f"[Role 3 실패] {e}")
+
+        # LlmVerification → 각 필드를 FinalReportState에 분해해서 저장
+        state.verification = llm_result.triager_result
+        state.patch = llm_result.blue_teamer_patch
+        # red_teamer_payload는 4단계(TESTING)에서 사용
         
-        # ... (이후 4단계, 5단계 로직도 동일하게 진행하되 마지막에 반드시 db_manager.save_job 호출) ...
+        db_manager.save_job(str(job_id), state)
+
+        # 4단계: 페이로드 실행 및 회귀 테스트 (Role 2 executor 연동 예정)
+        state.metadata.current_status = ScanStatus.TESTING
+        db_manager.save_job(str(job_id), state)
+        # TODO: await run_exploit(llm_result.red_teamer_payload)
+
         state.metadata.current_status = ScanStatus.COMPLETED
         db_manager.save_job(str(job_id), state)
         
@@ -112,6 +133,11 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
 
 @app.post("/scan/start")
 async def start_scan(target_url: str, source_dir: str, background_tasks: BackgroundTasks):
+    # 절대경로 변환 후 허용 범위 검증
+    resolved = Path(source_dir).resolve()
+    if not resolved.exists() or not resolved.is_dir():
+        raise HTTPException(status_code=400, detail="유효하지 않은 source_dir 경로입니다.")
+    
     job_id = uuid.uuid4()
     
     # DB에 초기 상태 기록
