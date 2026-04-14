@@ -3,5 +3,4 @@ env/
 __pycache__/
 *.pyc
 .env
-claude_context.txt
-export_context.py
+ref
