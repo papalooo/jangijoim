@@ -75,13 +75,7 @@ class ExploitPayload(BaseModel):
     body: Optional[str] = None
     expected_success_regex: str = Field(..., description="공격 성공 증명 정규식 (예: 'SQL syntax.*MySQL')")
 
-class LlmVerification(BaseModel):
-    """4중 멀티 에이전트 파이프라인의 최종 통합 출력 스키마"""
-    triager_result: VerificationResult
-    red_teamer_payload: ExploitPayload
-    blue_teamer_patch: PatchProposal
-    qa_passed: bool
-    qa_feedback: str
+
     
 # -----------------------------------------------------------------
 # [Phase 4] 실행, 패치 및 회귀 테스트 (Role 2, Role 3, Role 4)
@@ -104,6 +98,14 @@ class RegressionTestResult(BaseModel):
     is_mitigated: bool = Field(..., description="패치 후 취약점 차단 여부 (True면 방어 성공)")
     http_status_after_patch: int = Field(..., description="패치 후 동일 페이로드 전송 시의 상태 코드 (예: 403 Forbidden)")
     rollback_successful: bool = Field(..., description="테스트 후 원본 코드로의 롤백 성공 여부")
+
+class LlmVerification(BaseModel):
+    """4중 멀티 에이전트 파이프라인의 최종 통합 출력 스키마"""
+    triager_result: VerificationResult
+    red_teamer_payload: ExploitPayload
+    blue_teamer_patch: PatchProposal
+    qa_passed: bool
+    qa_feedback: str
 
 # -----------------------------------------------------------------
 # [Phase 5] 최종 보고서 상태 (Role 1 -> Role 3)
