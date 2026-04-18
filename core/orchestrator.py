@@ -9,6 +9,8 @@ from mapping.ast_parser import map_vulnerability_to_code
 from intelligence.llm_client import run_multi_agent_pipeline
 from scanner.engine import run_nuclei
 from scanner.parser import parse_nuclei_results
+from scanner.executor import run_exploit
+
 
 # 앞서 작성한 core/schemas.py의 모든 규격을 임포트합니다.
 from core.schemas import (
@@ -126,7 +128,15 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
         # 4단계: 페이로드 실행 및 회귀 테스트 (Role 2 executor 연동 예정)
         state.metadata.current_status = ScanStatus.TESTING
         db_manager.save_job(str(job_id), state)
-        # TODO: await run_exploit(llm_result.red_teamer_payload)
+        
+        # executor 발사
+        execution_result = await run_exploit(target_url, state.dast_result, llm_result.red_teamer_payload)
+        #PM 양식 (RegressionTestResult)로 포장
+        state.regression_test = RegressionTestResult(
+            is_mitigated=not execution_result.is_exploited,
+            http_status_after_patch=execution_result.http_status,
+            rollback_successful=True
+        )
 
         state.metadata.current_status = ScanStatus.COMPLETED
         db_manager.save_job(str(job_id), state)
