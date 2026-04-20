@@ -1,4 +1,4 @@
-name: OpenClaw DevSecOps Pipeline
+name: LLM DevSecOps Pipeline
 
 # 코드가 develop 브랜치에 Push되거나 PR이 올라올 때마다 자동으로 실행됩니다.
 on:
