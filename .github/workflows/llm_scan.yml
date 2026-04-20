@@ -21,10 +21,13 @@ jobs:
         python-version: "3.11"
         cache: 'pip'
 
-    - name: 🛠️ 의존성 패키지 설치
+    - name: 🛠️ 의존성 및 스캐너 설치
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements.txt semgrep
+        wget https://github.com/projectdiscovery/nuclei/releases/download/v3.2.0/nuclei_3.2.0_linux_amd64.zip
+        unzip nuclei_3.2.0_linux_amd64.zip
+        sudo mv nuclei /usr/local/bin/
 
     - name: 🎯 모의 타겟 서버 백그라운드 가동 (Terminal 1 역할)
       run: |
@@ -33,7 +36,7 @@ jobs:
         uvicorn app:app --host 127.0.0.1 --port 3000 &
         sleep 3 # 서버가 켜질 때까지 잠시 대기
 
-    - name: 🧠 OpenClaw 엔진 백그라운드 가동 (Terminal 2 역할)
+    - name: 🧠 Gemini 엔진 백그라운드 가동 (Terminal 2 역할)
       run: |
         python main.py serve &
         sleep 3 # 엔진이 켜질 때까지 잠시 대기

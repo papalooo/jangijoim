@@ -1,8 +1,7 @@
 version: '3.8'
 
 services:
-  # 1. 제미나이 엔진 (보안 진단 파이프라인)
-  openclaw-engine:
+  engine:
     build: 
       context: .
       dockerfile: Dockerfile
@@ -10,19 +9,19 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app  # 로컬 코드를 컨테이너에 동기화 (Hot Reload용)
+      - .:/app
+    command: uvicorn main:serve --host 0.0.0.0 --port 8000 --reload  # 추가
     environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY} # 호스트의 환경변수 주입
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     networks:
       - sec-network
     depends_on:
       - target-app
 
-  # 2. 타겟 샌드백 서버
   target-app:
     build: 
       context: ./target_app_mock
-      dockerfile: Dockerfile  # target_app_mock 폴더 안에 별도의 Dockerfile 필요
+      dockerfile: Dockerfile
     container_name: gemini_target
     ports:
       - "3000:3000"

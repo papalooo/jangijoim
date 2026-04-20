@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from mapping.ast_parser import map_vulnerability_to_code
-from intelligence.llm_client import run_multi_agent_pipeline
+from intelligence.llm_client import verify_vulnerabilities_batch
 
 # 앞서 작성한 core/schemas.py의 모든 규격을 임포트합니다.
 from core.schemas import (
@@ -101,15 +101,12 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
         # ✅ 변경: mock_role3_verify → 실제 run_multi_agent_pipeline 호출
         # ✅ ValueError / RuntimeError를 개별 캐치해서 에러 로그를 구체적으로 남김
         try:
-            llm_result = await run_multi_agent_pipeline(mapped_ctx)
-        except (ValueError, RuntimeError) as e:
-            # LLM 실패는 전체 파이프라인을 죽이지 않고 상태만 FAILED로 기록
+            # 매핑에 성공한 컨텍스트가 여러 개일 경우 통째로 넘김
+            batch_results = await verify_vulnerabilities_batch(state.mapped_contexts)
+            state.verified_results = batch_results
+        except Exception as e:
+            state.metadata.error_log = f"LLM Batch Verification Failed: {str(e)}"
             raise Exception(f"[Role 3 실패] {e}")
-
-        # LlmVerification → 각 필드를 FinalReportState에 분해해서 저장
-        state.verification = llm_result.triager_result
-        state.patch = llm_result.blue_teamer_patch
-        # red_teamer_payload는 4단계(TESTING)에서 사용
         
         db_manager.save_job(str(job_id), state)
 
