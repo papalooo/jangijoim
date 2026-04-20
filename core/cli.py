@@ -84,7 +84,8 @@ def render_and_save_report(data: dict, job_id: str):
     for idx, res in enumerate(results):
         is_vuln = res.get("is_vulnerable", False)
         cvss = res.get("cvss_score", 0.0)
-        reason = res.get("reasoning", "사유 없음")
+        
+        reason = res.get("reason", "사유 없음")
         
         # 터미널용 데이터 가공
         vuln_text = "[red]정탐 (취약)[/red]" if is_vuln else "[green]오탐 (안전)[/green]"
