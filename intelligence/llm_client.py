@@ -7,14 +7,10 @@ from core.schemas import MappedContext, VerificationResult
 
 # 환경 변수에서 API 키 로드
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
 
-# JSON 구조화된 출력을 강제하기 위한 설정
-generation_config = {
-    "temperature": 0.1,  # 일관성 있는 분석을 위해 낮게 설정
-    "response_mime_type": "application/json", 
-}
+# 최신 SDK 규격에 맞춘 Client 초기화
+# SDK는 기본적으로 GEMINI_API_KEY 환경변수를 자동 인식하지만, 명시적으로 주입합니다.
+client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else genai.Client()
 
 async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext]) -> List[VerificationResult]:
     """
@@ -26,11 +22,6 @@ async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext]) -> 
         
     if not mapped_contexts:
         return []
-
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-pro",
-        generation_config=generation_config
-    )
 
     # ---------------------------------------------------------
     # 1. N개의 컨텍스트를 하나의 문자열로 압축 (Batching)
@@ -62,8 +53,7 @@ async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext]) -> 
             {{
                 "id": 0,
                 "is_vulnerable": true 또는 false,
-                "confidence_score": 0~100 사이의 정수,
-                "reasoning": "코드의 어느 부분 때문에 정탐/오탐으로 판단했는지에 대한 구체적인 근거 (한국어)",
+                "reason": "코드의 어느 부분 때문에 정탐/오탐으로 판단했는지에 대한 구체적인 근거 (한국어)",
                 "cvss_score": 0.0~10.0 사이의 실수
             }},
             ... (나머지 항목들도 동일한 구조로 추가)
@@ -72,8 +62,15 @@ async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext]) -> 
     """
 
     try:
-        # 단 1번의 API 호출로 전체 데이터 전송
-        response = await model.generate_content_async(prompt)
+        # 단 1번의 API 호출로 전체 데이터 전송 (최신 SDK 비동기 방식 적용)
+        response = await client.aio.models.generate_content(
+            model="gemini-3.1-flash-lite-preview", # 이전 프롬프트에서 확인된 최신 모델인 gemini-2.5-flash로 변경을 권장합니다.
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                response_mime_type="application/json",
+            )
+        )
         result_dict = json.loads(response.text)
         
         # ---------------------------------------------------------
@@ -82,24 +79,19 @@ async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext]) -> 
         verified_results = []
         returned_array = result_dict.get("results", [])
         
-        # 만약 LLM이 일부를 누락했다면 기본값(오탐)으로 채우기 위한 방어 로직
         for idx in range(len(mapped_contexts)):
-            # 해당 ID의 결과 찾기
             item_result = next((item for item in returned_array if item.get("id") == idx), None)
             
             if item_result:
                 verified_results.append(VerificationResult(
                     is_vulnerable=item_result.get("is_vulnerable", False),
-                    confidence_score=item_result.get("confidence_score", 0),
-                    reasoning=item_result.get("reasoning", "분석 사유 누락"),
+                    reason=item_result.get("reason", "분석 사유 누락"), # ✅ 수정 완료
                     cvss_score=item_result.get("cvss_score", 0.0)
                 ))
             else:
-                # LLM이 응답을 빼먹은 경우 (안전 필터 등)
                 verified_results.append(VerificationResult(
                     is_vulnerable=False,
-                    confidence_score=0,
-                    reasoning="LLM 분석 중 누락되거나 안전 필터에 의해 거부되었습니다.",
+                    reason="LLM 분석 중 누락되거나 안전 필터에 의해 거부되었습니다.", # ✅ 수정 완료
                     cvss_score=0.0
                 ))
                 

@@ -5,21 +5,23 @@ from core import db_manager
 from datetime import datetime
 from typing import Dict
 from fastapi import FastAPI, BackgroundTasks, HTTPException
+from contextlib import asynccontextmanager # ✅ 이 줄을 추가합니다.
+
 from mapping.ast_parser import map_vulnerability_to_code
 from intelligence.llm_client import verify_vulnerabilities_batch
-
-# 앞서 작성한 core/schemas.py의 모든 규격을 임포트합니다.
 from core.schemas import (
     ScanMetadata, ScanStatus, FinalReportState,
     DastSastResult, MappedContext, VerificationResult,
     ExploitPayload, ExecutionResult, PatchProposal, RegressionTestResult
 )
 
-app = FastAPI(title="Jangijoim Remediation Tool Pipeline")
-
-@app.on_event("startup")
-def startup_event():
+# ✅ 기존의 @app.on_event("startup") 부분을 지우고 아래 lifespan 함수로 교체합니다.
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     db_manager.init_db()
+    yield # 서버가 켜질 때 yield 앞의 코드가 실행됩니다.
+
+app = FastAPI(title="Jangijoim Remediation Tool Pipeline", lifespan=lifespan)
 
 # 인메모리 상태 저장소 (실제 운영 시에는 SQLite/Redis 등으로 대체 가능)
 # Job ID를 키(Key)로 하여 전체 상태(FinalReportState)를 추적합니다.
@@ -98,12 +100,14 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
         state.metadata.current_status = ScanStatus.VERIFYING
         db_manager.save_job(str(job_id), state)
 
-        # ✅ 변경: mock_role3_verify → 실제 run_multi_agent_pipeline 호출
-        # ✅ ValueError / RuntimeError를 개별 캐치해서 에러 로그를 구체적으로 남김
         try:
-            # 매핑에 성공한 컨텍스트가 여러 개일 경우 통째로 넘김
-            batch_results = await verify_vulnerabilities_batch(state.mapped_contexts)
-            state.verified_results = batch_results
+            # ✅ 수정: 단일 객체인 state.mapped_context를 리스트로 감싸서 전달
+            batch_results = await verify_vulnerabilities_batch([state.mapped_context])
+            
+            # ✅ 수정: 반환된 결과 배열의 첫 번째 항목을 단수형 필드인 verification에 저장
+            if batch_results:
+                state.verification = batch_results[0]
+                
         except Exception as e:
             state.metadata.error_log = f"LLM Batch Verification Failed: {str(e)}"
             raise Exception(f"[Role 3 실패] {e}")

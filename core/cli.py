@@ -68,7 +68,10 @@ def scan_start(target_url: str, source_dir: str):
 
 def render_and_save_report(data: dict, job_id: str):
     """결과를 터미널 표로 출력하고 Markdown 보고서를 생성합니다."""
-    results = data.get("verified_results", [])
+    
+    # ✅ 수정: 데이터베이스(상태 객체)에서 단수형인 'verification'을 가져옴
+    verification = data.get("verification")
+    results = [verification] if verification else []
     
     # 터미널 Table 출력
     table = Table(title="취약점 검증 및 패치 결과", show_header=True, header_style="bold magenta")
