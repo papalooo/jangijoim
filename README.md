@@ -113,7 +113,7 @@ main      hotfix       release       develop        feature (로컬 작업)
 
  ## 예상 프로젝트 구조
  ```
- apat-remediation-tool/
+ jangijoim-remediation-tool/
 ├── .git/                           # Git 로컬 저장소 (자동 생성)
 ├── .github/
 │   └── pull_request_template.md    # [추가] PR 생성 시 팀원들이 작성할 표준 양식
