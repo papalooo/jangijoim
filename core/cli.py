@@ -15,10 +15,10 @@ API_BASE_URL = "http://127.0.0.1:8000"
 @app.command("start")
 def scan_start(target_url: str, source_dir: str):
     """
-    APAT 보안 스캔 파이프라인을 시작하고 진행 상황을 모니터링합니다.
+    JANGIJOIM 보안 스캔 파이프라인을 시작하고 진행 상황을 모니터링합니다.
     """
     console.print(Panel.fit(
-        f"[bold green]APAT Pipeline 시작[/bold green]\nTarget: [cyan]{target_url}[/cyan]\nSource: [yellow]{source_dir}[/yellow]",
+        f"[bold green]JANGIJOIM Pipeline 시작[/bold green]\nTarget: [cyan]{target_url}[/cyan]\nSource: [yellow]{source_dir}[/yellow]",
         border_style="green"
     ))
     
@@ -79,7 +79,7 @@ def render_and_save_report(data: dict, job_id: str):
     table.add_column("위험도(CVSS)", justify="center")
     table.add_column("LLM 분석 사유", style="dim")
     
-    md_content = f"# APAT Vulnerability Report\n- **Job ID:** {job_id}\n\n"
+    md_content = f"# JANGIJOIM Vulnerability Report\n- **Job ID:** {job_id}\n\n"
     
     for idx, res in enumerate(results):
         is_vuln = res.get("is_vulnerable", False)
@@ -101,7 +101,7 @@ def render_and_save_report(data: dict, job_id: str):
     console.print(table)
     
     # 디스크에 마크다운 리포트 저장
-    report_filename = f"APAT_Report_{job_id[-6:]}.md"
+    report_filename = f"JANGIJOIM_Report_{job_id[-6:]}.md"
     with open(report_filename, "w", encoding="utf-8") as f:
         f.write(md_content)
         
