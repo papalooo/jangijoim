@@ -1,97 +1,111 @@
-import time
 import typer
-import requests
+import httpx
+import time
+import json
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.status import Status
+from rich.table import Table
 from rich.panel import Panel
 
-# Typer 앱 및 Rich 콘솔 초기화
-app = typer.Typer(help="jangijoim: LLM 기반 웹 취약점 진단 및 자동 패치 파이프라인")
+app = typer.Typer()
 console = Console()
 
-# 로컬에서 백그라운드로 돌고 있는 FastAPI 오케스트레이터 주소
 API_BASE_URL = "http://127.0.0.1:8000"
 
-@app.command()
-def start(
-    target_url: str = typer.Argument(..., help="진단할 타겟 웹 서비스의 URL (예: http://localhost:3000)"),
-    source_dir: str = typer.Argument(..., help="분석할 로컬 소스코드 디렉토리 경로 (예: ./src)")
-):
+@app.command("start")
+def scan_start(target_url: str, source_dir: str):
     """
-    jangijoim 파이프라인을 시작하고 진행 상태를 모니터링합니다.
+    JANGIJOIM 보안 스캔 파이프라인을 시작하고 진행 상황을 모니터링합니다.
     """
-    console.print(Panel.fit(f"[bold blue]jangijoim Pipeline 시작[/bold blue]\nTarget: [green]{target_url}[/green]\nSource: [green]{source_dir}[/green]"))
-
-    # 1. 오케스트레이터에 스캔 시작 요청 (POST)
+    console.print(Panel.fit(
+        f"[bold green]JANGIJOIM Pipeline 시작[/bold green]\nTarget: [cyan]{target_url}[/cyan]\nSource: [yellow]{source_dir}[/yellow]",
+        border_style="green"
+    ))
+    
+    # 1. FastAPI 서버에 스캔 시작 요청
     try:
-        response = requests.post(
-            f"{API_BASE_URL}/scan/start",
-            params={"target_url": target_url, "source_dir": source_dir}
-        )
-        response.raise_for_status()
-        job_data = response.json()
-        job_id = job_data["job_id"]
-    except requests.exceptions.ConnectionError:
-        console.print("[bold red][오류][/bold red] FastAPI 오케스트레이터가 실행 중이지 않습니다. 'uvicorn main:app'을 먼저 실행하세요.")
-        raise typer.Exit(code=1)
+        resp = httpx.post(f"{API_BASE_URL}/scan/start", params={"target_url": target_url, "source_dir": source_dir})
+        resp.raise_for_status()
+        job_id = resp.json()["job_id"]
     except Exception as e:
-        console.print(f"[bold red][오류][/bold red] 파이프라인 시작 실패: {e}")
-        raise typer.Exit(code=1)
+        console.print(f"[bold red]❌ 엔진 서버(FastAPI)에 연결할 수 없습니다.[/bold red] 서버가 켜져 있는지 확인하세요.\n({e})")
+        return
 
-    # 2. 상태 폴링(Polling) 및 프로그레스 바 렌더링
-    # Rich 라이브러리를 사용해 터미널이 멈추지 않고 애니메이션이 돌게 만듭니다.
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        transient=False,
-    ) as progress:
-        
-        task_id = progress.add_task("[cyan]파이프라인 초기화 중...", total=None)
-        
+    # 2. 상태 폴링(Polling) 및 Rich Status UI 표시
+    with Status("[bold blue]파이프라인 초기화 중...", spinner="dots") as status:
         while True:
+            time.sleep(2) # 2초 주기로 상태 확인
             try:
-                # 1초마다 FastAPI 서버에 현재 작업 상태를 물어봅니다. (GET)
-                status_res = requests.get(f"{API_BASE_URL}/scan/status/{job_id}")
-                status_res.raise_for_status()
-                state = status_res.json()
+                status_resp = httpx.get(f"{API_BASE_URL}/scan/status/{job_id}").json()
+                current_state = status_resp.get("metadata", {}).get("current_status", "UNKNOWN")
                 
-                current_status = state["metadata"]["current_status"]
+                # 상태별 메시지 매핑
+                state_messages = {
+                    "SCANNING": "[1/5] DAST 및 SAST 취약점 스캔 진행 중...",
+                    "MAPPING": "[2/5] 소스코드 AST 추적 및 교차 매핑 중...",
+                    "VERIFYING": "[3/5] LLM 컨텍스트 주입 및 정오탐 판별 중...",
+                    "PATCHING": "[4/5] 시큐어 코딩(Patch) 생성 및 적용 중...",
+                    "TESTING": "[5/5] 패치 후 회귀 테스트(Regression Test) 중..."
+                }
                 
-                # 상태값에 따라 터미널 텍스트 업데이트
-                if current_status == "SCANNING":
-                    progress.update(task_id, description="[yellow]1/5 단계: DAST 및 SAST 취약점 스캔 진행 중...[/yellow]")
-                elif current_status == "MAPPING":
-                    progress.update(task_id, description="[magenta]2/5 단계: 소스코드 AST 추적 및 교차 매핑 중...[/magenta]")
-                elif current_status == "VERIFYING":
-                    progress.update(task_id, description="[blue]3/5 단계: LLM 컨텍스트 주입 및 정오탐 판별 중...[/blue]")
-                elif current_status == "TESTING":
-                    progress.update(task_id, description="[cyan]4/5 단계: 방어 코드 생성, 적용 및 회귀 테스트 중...[/cyan]")
-                elif current_status == "COMPLETED":
-                    progress.update(task_id, description="[bold green]✅ 모든 파이프라인 완료![/bold green]")
+                display_msg = state_messages.get(current_state, f"현재 상태: {current_state}")
+                status.update(f"[bold cyan]{display_msg}[/bold cyan]")
+                
+                if current_state == "COMPLETED":
+                    console.print("\n[bold green]✅ 파이프라인 스캔이 모두 완료되었습니다![/bold green]")
                     break
-                elif current_status == "FAILED":
-                    progress.update(task_id, description="[bold red]❌ 파이프라인 실행 중 오류 발생[/bold red]")
-                    error_log = state["metadata"].get("error_log", "알 수 없는 오류")
-                    console.print(f"\n[red]상세 에러:[/red] {error_log}")
-                    raise typer.Exit(code=1)
-                
-                time.sleep(1) # 1초 대기 후 다시 확인
-            except typer.Exit:
-                raise
-            except Exception as e:
-                progress.update(task_id, description=f"[bold red]상태 확인 중 통신 오류 발생: {e}[/bold red]")
-                time.sleep(2)
+                elif current_state == "FAILED":
+                    error_log = status_resp.get("metadata", {}).get("error_log", "알 수 없는 에러 발생")
+                    console.print(f"\n[bold red]❌ 파이프라인이 실패했습니다: {error_log}[/bold red]")
+                    return
+                    
+            except httpx.RequestError:
+                status.update("[bold red]서버와 통신 지연 중... 재연결 시도...[/bold red]")
 
-    # 3. 최종 결과 요약 출력
-    console.print("\n[bold]📋 스캔 요약 리포트[/bold]")
-    if state.get("verification") and state["verification"]["is_vulnerable"]:
-        console.print(f"- [red]정탐 확인됨:[/red] CVSS Score {state['verification']['cvss_score']}")
-        if state.get("regression_test") and state["regression_test"]["is_mitigated"]:
-            console.print("- [green]자동 패치 및 방어 테스트 성공 (HTTP 403 확인)[/green]")
-    else:
-        console.print("- [yellow]발견된 내역이 모두 오탐으로 판별되어 안전합니다.[/yellow]")
+    # 3. 완료 후 터미널에 결과 표(Table) 출력 및 파일 저장
+    render_and_save_report(status_resp, job_id)
+
+
+def render_and_save_report(data: dict, job_id: str):
+    """결과를 터미널 표로 출력하고 Markdown 보고서를 생성합니다."""
+    
+    # ✅ 수정: 데이터베이스(상태 객체)에서 단수형인 'verification'을 가져옴
+    verification = data.get("verification")
+    results = [verification] if verification else []
+    
+    # 터미널 Table 출력
+    table = Table(title="취약점 검증 및 패치 결과", show_header=True, header_style="bold magenta")
+    table.add_column("판별 결과", justify="center")
+    table.add_column("위험도(CVSS)", justify="center")
+    table.add_column("LLM 분석 사유", style="dim")
+    
+    md_content = f"# JANGIJOIM Vulnerability Report\n- **Job ID:** {job_id}\n\n"
+    
+    for idx, res in enumerate(results):
+        is_vuln = res.get("is_vulnerable", False)
+        cvss = res.get("cvss_score", 0.0)
         
-    console.print("\n[bold cyan]상세 보고서가 PDF로 렌더링 되었습니다.[/bold cyan]")
+        reason = res.get("reason", "사유 없음")
+        
+        # 터미널용 데이터 가공
+        vuln_text = "[red]정탐 (취약)[/red]" if is_vuln else "[green]오탐 (안전)[/green]"
+        cvss_text = f"[red]{cvss}[/red]" if cvss >= 7.0 else f"[yellow]{cvss}[/yellow]" if cvss >= 4.0 else str(cvss)
+        
+        table.add_row(vuln_text, cvss_text, reason)
+        
+        # 마크다운용 데이터 가공
+        md_content += f"### Item {idx+1}: {'🚨 정탐' if is_vuln else '✅ 오탐'}\n"
+        md_content += f"- **CVSS 점수:** {cvss}\n"
+        md_content += f"- **분석 근거:** {reason}\n\n"
+
+    console.print(table)
+    
+    # 디스크에 마크다운 리포트 저장
+    report_filename = f"JANGIJOIM_Report_{job_id[-6:]}.md"
+    with open(report_filename, "w", encoding="utf-8") as f:
+        f.write(md_content)
+        
+    console.print(f"📄 [bold yellow]최종 보고서가 생성되었습니다:[/bold yellow] [underline]{report_filename}[/underline]")
 
 if __name__ == "__main__":
     app()

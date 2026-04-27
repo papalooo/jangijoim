@@ -1,0 +1,22 @@
+// .devcontainer/devcontainer.json
+{
+  "name": "Security Dev Environment",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml"
+      ]
+    }
+  },
+  // 모의해킹 툴(Nmap 등)의 패킷 조작 및 로우 소켓 접근을 위한 리눅스 커널 권한 허용
+  "runArgs": [
+    "--cap-add=NET_RAW",
+    "--cap-add=NET_ADMIN"
+  ],
+  "remoteUser": "root"
+}

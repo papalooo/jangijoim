@@ -4,26 +4,28 @@ from pathlib import Path
 from core import db_manager
 from datetime import datetime
 from typing import Dict
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, BackgroundTasks, HTTPException
+
 from mapping.ast_parser import map_vulnerability_to_code
-from intelligence.llm_client import run_multi_agent_pipeline
+from intelligence.llm_client import verify_vulnerabilities_batch
 from scanner.engine import run_nuclei
 from scanner.parser import parse_nuclei_results
 from scanner.executor import run_exploit
 
-
-# 앞서 작성한 core/schemas.py의 모든 규격을 임포트합니다.
 from core.schemas import (
     ScanMetadata, ScanStatus, FinalReportState,
     DastSastResult, MappedContext, VerificationResult,
     ExploitPayload, ExecutionResult, PatchProposal, RegressionTestResult
 )
 
-app = FastAPI(title="Jangijoim Remediation Tool Pipeline")
-
-@app.on_event("startup")
-def startup_event():
+# ✅ 기존의 @app.on_event("startup") 부분을 지우고 아래 lifespan 함수로 교체합니다.
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     db_manager.init_db()
+    yield # 서버가 켜질 때 yield 앞의 코드가 실행됩니다.
+
+app = FastAPI(title="Jangijoim Remediation Tool Pipeline", lifespan=lifespan)
 
 # 인메모리 상태 저장소 (실제 운영 시에는 SQLite/Redis 등으로 대체 가능)
 # Job ID를 키(Key)로 하여 전체 상태(FinalReportState)를 추적합니다.
@@ -110,18 +112,17 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
         state.metadata.current_status = ScanStatus.VERIFYING
         db_manager.save_job(str(job_id), state)
 
-        # ✅ 변경: mock_role3_verify → 실제 run_multi_agent_pipeline 호출
-        # ✅ ValueError / RuntimeError를 개별 캐치해서 에러 로그를 구체적으로 남김
         try:
-            llm_result = await run_multi_agent_pipeline(mapped_ctx)
-        except (ValueError, RuntimeError) as e:
-            # LLM 실패는 전체 파이프라인을 죽이지 않고 상태만 FAILED로 기록
+            # ✅ 수정: 단일 객체인 state.mapped_context를 리스트로 감싸서 전달
+            batch_results = await verify_vulnerabilities_batch([state.mapped_context])
+            
+            # ✅ 수정: 반환된 결과 배열의 첫 번째 항목을 단수형 필드인 verification에 저장
+            if batch_results:
+                state.verification = batch_results[0]
+                
+        except Exception as e:
+            state.metadata.error_log = f"LLM Batch Verification Failed: {str(e)}"
             raise Exception(f"[Role 3 실패] {e}")
-
-        # LlmVerification → 각 필드를 FinalReportState에 분해해서 저장
-        state.verification = llm_result.triager_result
-        state.patch = llm_result.blue_teamer_patch
-        # red_teamer_payload는 4단계(TESTING)에서 사용
         
         db_manager.save_job(str(job_id), state)
 
