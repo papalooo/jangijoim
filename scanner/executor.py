@@ -25,6 +25,30 @@ async def run_exploit(target_url: str, dast_res: DastSastResult, payload_data: E
             response = requests.post(full_url, data={"username": payload_string, "password": "123"}, timeout=5)
         else:
             response = requests.get(full_url, params={"id": payload_string}, timeout=5)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
             
         status_code = response.status_code
         response_text = response.text[:500] 
