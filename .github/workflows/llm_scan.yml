@@ -26,7 +26,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt semgrep
         wget https://github.com/projectdiscovery/nuclei/releases/download/v3.2.0/nuclei_3.2.0_linux_amd64.zip
-        unzip nuclei_3.2.0_linux_amd64.zip
+        unzip -o nuclei_3.2.0_linux_amd64.zip
         sudo mv nuclei /usr/local/bin/
 
     - name: 🎯 모의 타겟 서버 백그라운드 가동 (Terminal 1 역할)
