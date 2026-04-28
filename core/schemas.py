@@ -94,6 +94,14 @@ class PatchProposal(BaseModel):
     remediation_steps: List[str] = Field(default=[], description="적용된 보안 조치에 대한 단계별 설명")
     usage: LLMUsage = Field(default_factory=LLMUsage)
 
+class LlmVerification(BaseModel):
+    """4중 멀티 에이전트 파이프라인의 최종 통합 출력 스키마"""
+    triager_result: VerificationResult
+    red_teamer_payload: ExploitPayload
+    blue_teamer_patch: PatchProposal
+    qa_passed: bool
+    qa_feedback: str
+    
 class RegressionTestResult(BaseModel):
     is_mitigated: bool = Field(..., description="패치 후 취약점 차단 여부 (True면 방어 성공)")
     http_status_after_patch: int = Field(..., description="패치 후 동일 페이로드 전송 시의 상태 코드 (예: 403 Forbidden)")

@@ -4,11 +4,15 @@ from pathlib import Path
 from core import db_manager
 from datetime import datetime
 from typing import Dict
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, BackgroundTasks, HTTPException
-from contextlib import asynccontextmanager # ✅ 이 줄을 추가합니다.
 
 from mapping.ast_parser import map_vulnerability_to_code
 from intelligence.llm_client import verify_vulnerabilities_batch
+from scanner.engine import run_nuclei
+from scanner.parser import parse_nuclei_results
+from scanner.executor import run_exploit
+
 from core.schemas import (
     ScanMetadata, ScanStatus, FinalReportState,
     DastSastResult, MappedContext, VerificationResult,
@@ -83,7 +87,15 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
         state.metadata.current_status = ScanStatus.SCANNING
         db_manager.save_job(str(job_id), state) # 상태가 바뀔 때마다 DB 저장
         
-        dast_res = await mock_role2_scan(target_url)
+        # 실제 스캐너 구동 및 데이터 파싱
+        raw_results = await run_nuclei(target_url)
+        parsed_results = parse_nuclei_results(raw_results)
+        
+        if not parsed_results:
+            raise Exception("타겟에서 유의미한 취약점이 발견되지 않았습니다.")
+            
+        # 단일 처리 규격 준수를 위해 첫 번째 결과 할당
+        dast_res = parsed_results[0]
         state.dast_result = dast_res
         
         # 2단계: 코드 매핑
@@ -117,7 +129,15 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
         # 4단계: 페이로드 실행 및 회귀 테스트 (Role 2 executor 연동 예정)
         state.metadata.current_status = ScanStatus.TESTING
         db_manager.save_job(str(job_id), state)
-        # TODO: await run_exploit(llm_result.red_teamer_payload)
+        
+        # executor 발사
+        execution_result = await run_exploit(target_url, state.dast_result, llm_result.red_teamer_payload)
+        #PM 양식 (RegressionTestResult)로 포장
+        state.regression_test = RegressionTestResult(
+            is_mitigated=not execution_result.is_exploited,
+            http_status_after_patch=execution_result.http_status,
+            rollback_successful=True
+        )
 
         state.metadata.current_status = ScanStatus.COMPLETED
         db_manager.save_job(str(job_id), state)
