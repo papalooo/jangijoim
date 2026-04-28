@@ -3,5 +3,12 @@ env/
 __pycache__/
 *.pyc
 .env
-.llm_context/
 *.db
+reports/
+export_context.py
+
+# LLM Context Export Directory
+.llm_context/
+
+# LLM Context Export Directory
+./chronicle/
