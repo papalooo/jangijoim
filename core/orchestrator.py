@@ -2,76 +2,33 @@ import uuid
 import asyncio
 from pathlib import Path
 from core import db_manager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 
 from mapping.ast_parser import map_vulnerability_to_code
 from intelligence.llm_client import verify_vulnerabilities_batch
-from scanner.engine import run_nuclei
-from scanner.parser import parse_nuclei_results
+from intelligence.reporter import generate_markdown_report
+from scanner.engine import run_nuclei, run_semgrep, run_katana, run_zap
+from scanner.parser import normalize_and_merge_results
 from scanner.executor import run_exploit
 
 from core.schemas import (
     ScanMetadata, ScanStatus, FinalReportState,
     DastSastResult, MappedContext, VerificationResult,
+    LlmVerification,  # ✅ 추가
     ExploitPayload, ExecutionResult, PatchProposal, RegressionTestResult
 )
 
-# ✅ 기존의 @app.on_event("startup") 부분을 지우고 아래 lifespan 함수로 교체합니다.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db_manager.init_db()
-    yield # 서버가 켜질 때 yield 앞의 코드가 실행됩니다.
+    yield
 
 app = FastAPI(title="Jangijoim Remediation Tool Pipeline", lifespan=lifespan)
 
-# 인메모리 상태 저장소 (실제 운영 시에는 SQLite/Redis 등으로 대체 가능)
-# Job ID를 키(Key)로 하여 전체 상태(FinalReportState)를 추적합니다.
 job_store: Dict[uuid.UUID, FinalReportState] = {}
-
-
-# =====================================================================
-# [Mock Functions] 타 팀원(Role 2, 3, 4)이 구현할 함수들의 껍데기(인터페이스)
-# 실제 통합 단계(Phase 3)에서 이 부분들을 팀원들의 실제 함수 임포트로 교체합니다.
-# =====================================================================
-
-async def mock_role2_scan(target_url: str) -> DastSastResult:
-    """[Role 2] DAST 스캔 및 파싱 수행"""
-    await asyncio.sleep(2) # 스캔 딜레이 모사
-    return DastSastResult(
-        target_endpoint=f"{target_url}/api/login",
-        http_method="POST",
-        vuln_type="SQL Injection",
-        severity="High",
-        payload="' OR 1=1 --",
-        sliced_response="SQL syntax error near..."
-    )
-
-async def mock_role4_map_code(dast_result: DastSastResult, source_dir: str) -> MappedContext:
-    """[Role 4] DAST 타격 URL을 소스코드 파일/라인으로 매핑"""
-    await asyncio.sleep(1)
-    return MappedContext(
-        dast_data=dast_result,
-        is_mapped=True,
-        mapped_file_path="src/auth.py",
-        start_line=20,
-        end_line=50,
-        code_snippet="def login(user, pw):\n  query = f'SELECT * FROM users WHERE id={user}'"
-    )
-
-async def mock_role3_verify(context: MappedContext) -> VerificationResult:
-    """[Role 3] LLM 기반 정오탐 판별"""
-    await asyncio.sleep(2)
-    return VerificationResult(
-        is_vulnerable=True,
-        cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-        cvss_score=9.8,
-        reason="사용자 입력값이 쿼리에 직접 바인딩되어 SQLi가 명확히 가능함."
-    )
-
-# ... (페이로드 생성, 실행, 패치, 회귀 테스트 모의 함수 생략 - 동일한 방식으로 연결) ...
 
 
 # =====================================================================
@@ -83,68 +40,108 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
     if not state:
         return
     try:
-        # 1단계: 스캔
+        # 1단계: 스캔 (Adaptive Hybrid DAST 가동)
         state.metadata.current_status = ScanStatus.SCANNING
-        db_manager.save_job(str(job_id), state) # 상태가 바뀔 때마다 DB 저장
+        db_manager.save_job(str(job_id), state)
         
-        # 실제 스캐너 구동 및 데이터 파싱
-        raw_results = await run_nuclei(target_url)
-        parsed_results = parse_nuclei_results(raw_results)
+        # [Tier 1-A] Katana 크롤링으로 공격 표면 확장
+        katana_urls = await run_katana(target_url)
         
-        if not parsed_results:
-            raise Exception("타겟에서 유의미한 취약점이 발견되지 않았습니다.")
+        # [Tier 1-B] Nuclei & Semgrep 병렬 가동
+        dast_task = run_nuclei(katana_urls)
+        sast_task = run_semgrep(source_dir)
+        dast_raw, sast_raw = await asyncio.gather(dast_task, sast_task)
+        
+        # [Tier 2] 적응형 Fallback: DAST 탐지율이 SAST에 비해 너무 낮을 때 ZAP 가동
+        zap_raw = None
+        sast_count = len(sast_raw.get("results", []))
+        dast_count = len(dast_raw)
+        
+        if sast_count >= 10 and dast_count <= 2:
+            print(f"⚠️ [Adaptive] DAST 결과({dast_count})가 SAST({sast_count}) 대비 현저히 부족합니다. ZAP 심층 스캔을 시작합니다.")
+            zap_raw = await run_zap(target_url)
+        
+        # 결과 통합 및 정규화
+        merged_results = normalize_and_merge_results(dast_raw, sast_raw, zap_raw)
+        
+        if not merged_results:
+            raise Exception("취약점이 발견되지 않았습니다. (DAST/SAST 모두 결과 없음)")
             
-        # 단일 처리 규격 준수를 위해 첫 번째 결과 할당
-        dast_res = parsed_results[0]
-        state.dast_result = dast_res
-        
+        # 다중 취약점 항목 초기화
+        from core.schemas import VulnerabilityItem
+        state.vulnerabilities = [VulnerabilityItem(dast_result=res) for res in merged_results]
+        db_manager.save_job(str(job_id), state)
+
+        # ---------------------------------------------------------
+        # 이후 모든 단계(매핑, 판별, 검증)를 루프로 처리
+        # ---------------------------------------------------------
+
         # 2단계: 코드 매핑
         state.metadata.current_status = ScanStatus.MAPPING
         db_manager.save_job(str(job_id), state)
         
-        mapped_ctx = await map_vulnerability_to_code(dast_res, source_dir)
-        state.mapped_context = mapped_ctx
+        async def map_single_item(item):
+            try:
+                mapped_ctx = await map_vulnerability_to_code(item.dast_result, source_dir)
+                item.mapped_context = mapped_ctx
+            except Exception as e:
+                print(f"⚠️ 매핑 실패 ({item.dast_result.vuln_type}): {e}")
+
+        # 모든 항목에 대해 병렬 매핑 수행
+        await asyncio.gather(*(map_single_item(item) for item in state.vulnerabilities))
         
-        if not mapped_ctx.is_mapped:
-            raise Exception("소스코드에서 대상 엔드포인트 라우터를 찾을 수 없습니다.")
-            
+        db_manager.save_job(str(job_id), state)
+
         # 3단계: LLM 멀티 에이전트 판별
         state.metadata.current_status = ScanStatus.VERIFYING
         db_manager.save_job(str(job_id), state)
 
-        try:
-            # ✅ 수정: 단일 객체인 state.mapped_context를 리스트로 감싸서 전달
-            batch_results = await verify_vulnerabilities_batch([state.mapped_context])
-            
-            # ✅ 수정: 반환된 결과 배열의 첫 번째 항목을 단수형 필드인 verification에 저장
-            if batch_results:
-                state.verification = batch_results[0]
-                
-        except Exception as e:
-            state.metadata.error_log = f"LLM Batch Verification Failed: {str(e)}"
-            raise Exception(f"[Role 3 실패] {e}")
+        # 매핑 성공한 항목들만 모아서 배치 처리
+        mapped_items = [v for v in state.vulnerabilities if v.mapped_context and v.mapped_context.is_mapped]
+        if mapped_items:
+            try:
+                batch_results = await verify_vulnerabilities_batch([v.mapped_context for v in mapped_items])
+                for item, llm_res in zip(mapped_items, batch_results):
+                    item.llm_verification = llm_res
+            except Exception as e:
+                print(f"⚠️ LLM 판별 단계 실패: {e}")
         
         db_manager.save_job(str(job_id), state)
 
-        # 4단계: 페이로드 실행 및 회귀 테스트 (Role 2 executor 연동 예정)
+        # 4단계: 페이로드 실행 및 회귀 테스트
         state.metadata.current_status = ScanStatus.TESTING
         db_manager.save_job(str(job_id), state)
         
-        # executor 발사
-        execution_result = await run_exploit(target_url, state.dast_result, llm_result.red_teamer_payload)
-        #PM 양식 (RegressionTestResult)로 포장
-        state.regression_test = RegressionTestResult(
-            is_mitigated=not execution_result.is_exploited,
-            http_status_after_patch=execution_result.http_status,
-            rollback_successful=True
-        )
+        for item in state.vulnerabilities:
+            # LLM이 정탐으로 판별하고 페이로드를 생성한 경우만 실행
+            if item.llm_verification and item.llm_verification.triager_result.is_vulnerable:
+                try:
+                    execution_result = await run_exploit(
+                        target_url,
+                        item.dast_result,
+                        item.llm_verification.red_teamer_payload
+                    )
+                    item.execution = execution_result
+                    item.regression_test = RegressionTestResult(
+                        is_mitigated=not execution_result.is_exploited,
+                        http_status_after_patch=execution_result.http_status,
+                        rollback_successful=True
+                    )
+                except Exception as e:
+                    print(f"⚠️ PoC 검증 실패 ({item.dast_result.vuln_type}): {e}")
 
+        # 완료 처리
         state.metadata.current_status = ScanStatus.COMPLETED
+        state.metadata.end_time = datetime.now(timezone.utc)
         db_manager.save_job(str(job_id), state)
+        
+        # 5단계: 최종 보고서 생성
+        generate_markdown_report(state)
         
     except Exception as e:
         state.metadata.current_status = ScanStatus.FAILED
         state.metadata.error_log = str(e)
+        state.metadata.end_time = datetime.now(timezone.utc)
         db_manager.save_job(str(job_id), state)
 
 
@@ -154,14 +151,12 @@ async def run_scan_pipeline(job_id: uuid.UUID, target_url: str, source_dir: str)
 
 @app.post("/scan/start")
 async def start_scan(target_url: str, source_dir: str, background_tasks: BackgroundTasks):
-    # 절대경로 변환 후 허용 범위 검증
     resolved = Path(source_dir).resolve()
     if not resolved.exists() or not resolved.is_dir():
         raise HTTPException(status_code=400, detail="유효하지 않은 source_dir 경로입니다.")
     
     job_id = uuid.uuid4()
     
-    # DB에 초기 상태 기록
     metadata = ScanMetadata(target_host=target_url, source_dir=source_dir)
     initial_state = FinalReportState(metadata=metadata)
     db_manager.save_job(str(job_id), initial_state)

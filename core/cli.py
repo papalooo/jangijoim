@@ -69,43 +69,52 @@ def scan_start(target_url: str, source_dir: str):
 def render_and_save_report(data: dict, job_id: str):
     """결과를 터미널 표로 출력하고 Markdown 보고서를 생성합니다."""
     
-    # ✅ 수정: 데이터베이스(상태 객체)에서 단수형인 'verification'을 가져옴
-    verification = data.get("verification")
-    results = [verification] if verification else []
+    # ✅ 다중 취약점 리스트 가져오기
+    vulnerabilities = data.get("vulnerabilities", [])
     
     # 터미널 Table 출력
-    table = Table(title="취약점 검증 및 패치 결과", show_header=True, header_style="bold magenta")
+    table = Table(title=f"취약점 검증 결과 (총 {len(vulnerabilities)}건)", show_header=True, header_style="bold magenta")
+    table.add_column("No.", justify="center")
+    table.add_column("취약점 유형", justify="left")
     table.add_column("판별 결과", justify="center")
-    table.add_column("위험도(CVSS)", justify="center")
-    table.add_column("LLM 분석 사유", style="dim")
+    table.add_column("CVSS", justify="center")
+    table.add_column("PoC 검증", justify="center")
     
-    md_content = f"# JANGIJOIM Vulnerability Report\n- **Job ID:** {job_id}\n\n"
+    md_content = f"# JANGIJOIM Vulnerability Summary\n- **Job ID:** {job_id}\n\n"
     
-    for idx, res in enumerate(results):
-        is_vuln = res.get("is_vulnerable", False)
-        cvss = res.get("cvss_score", 0.0)
+    for idx, item in enumerate(vulnerabilities):
+        vuln_type = item.get("dast_result", {}).get("vuln_type", "Unknown")
+        llm_res = item.get("llm_verification", {})
+        triager = llm_res.get("triager_result", {}) if llm_res else {}
         
-        reason = res.get("reason", "사유 없음")
+        is_vuln = triager.get("is_vulnerable", False)
+        cvss = triager.get("cvss_score", 0.0)
+        
+        # PoC 검증 결과
+        exec_res = item.get("execution")
+        poc_status = "✅ 성공" if exec_res and exec_res.get("is_exploited") else "❌ 실패" if exec_res else "N/A"
         
         # 터미널용 데이터 가공
-        vuln_text = "[red]정탐 (취약)[/red]" if is_vuln else "[green]오탐 (안전)[/green]"
+        vuln_status = "[red]정탐[/red]" if is_vuln else "[green]오탐[/green]"
         cvss_text = f"[red]{cvss}[/red]" if cvss >= 7.0 else f"[yellow]{cvss}[/yellow]" if cvss >= 4.0 else str(cvss)
         
-        table.add_row(vuln_text, cvss_text, reason)
+        table.add_row(str(idx+1), vuln_type, vuln_status, cvss_text, poc_status)
         
-        # 마크다운용 데이터 가공
-        md_content += f"### Item {idx+1}: {'🚨 정탐' if is_vuln else '✅ 오탐'}\n"
-        md_content += f"- **CVSS 점수:** {cvss}\n"
-        md_content += f"- **분석 근거:** {reason}\n\n"
+        # 마크다운용 요약 가공
+        md_content += f"### {idx+1}. {vuln_type}\n"
+        md_content += f"- **상태:** {'🚨 정탐' if is_vuln else '✅ 오탐'}\n"
+        md_content += f"- **CVSS:** {cvss}\n"
+        md_content += f"- **PoC 검증:** {poc_status}\n\n"
 
     console.print(table)
+    console.print(f"\n💡 [bold cyan]상세 보고서는 reports/ 디렉토리 내의 최신 파일을 확인하세요.[/bold cyan]")
     
-    # 디스크에 마크다운 리포트 저장
-    report_filename = f"JANGIJOIM_Report_{job_id[-6:]}.md"
-    with open(report_filename, "w", encoding="utf-8") as f:
+    # CLI 요약 리포트 저장 (상세 리포트는 이미 reporter.py에서 생성됨)
+    summary_filename = f"JANGIJOIM_Summary_{job_id[-6:]}.md"
+    with open(summary_filename, "w", encoding="utf-8") as f:
         f.write(md_content)
         
-    console.print(f"📄 [bold yellow]최종 보고서가 생성되었습니다:[/bold yellow] [underline]{report_filename}[/underline]")
+    console.print(f"📄 [bold yellow]CLI 요약 보고서가 생성되었습니다:[/bold yellow] [underline]{summary_filename}[/underline]")
 
 if __name__ == "__main__":
     app()

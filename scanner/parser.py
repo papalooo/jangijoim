@@ -1,64 +1,41 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 from core.schemas import DastSastResult
 
 def parse_nuclei_results(raw_results: List[Dict[str, Any]]) -> List[DastSastResult]:
     """
-    Nuclei 스캐너의 원시 JSON 결과를 팀 표준 규격(DastSastResult)으로 변환하고
-    LLM API 비용 절감을 위해 중복된 취약점을 제거한다.
+    Nuclei 스캐너의 원시 JSON 결과를 팀 표준 규격(DastSastResult)으로 변환한다.
     """
-    # [Role 2 정석 디버깅] 스캐너로부터 받은 로우 데이터의 생얼을 확인합니다.
-    print(f"\n[DEBUG] 📥 스캐너로부터 {len(raw_results)}개의 원시 결과를 수신했습니다.")
-    
-    if len(raw_results) > 0:
-        # 데이터가 하나라도 있다면 필드 구조를 찍어서 파싱이 가능한지 봅니다.
-        print(f"[DEBUG] 첫 번째 결과의 필드 목록: {list(raw_results[0].keys())}")
-        if "matched-at" in raw_results[0]:
-            print(f"[DEBUG] 샘플 타겟 주소: {raw_results[0]['matched-at']}")
-
     parsed_results = []
     seen_signatures = set()
 
     for item in raw_results:
-        # 1. 필요 데이터 추출 (Nuclei JSON 구조 기준)
         info = item.get("info", {})
         vuln_type = info.get("name", "Unknown Vulnerability")
         severity = info.get("severity", "info").capitalize()
-        
-        # HTTP 정보 추출
         target_url = item.get("matched-at", "")
         extracted_results = item.get("extracted-results", [])
         payload = extracted_results[0] if extracted_results else "No explicit payload"
         
-        # HTTP Request/Response 파싱
         request_raw = item.get("request", "")
         response_raw = item.get("response", "")
         
-        # Method 추출 (GET, POST 등)
         http_method = "GET"
         if request_raw and len(request_raw.split(" ")) > 0:
             http_method = request_raw.split(" ")[0]
             
-        # URL에서 엔드포인트 경로만 추출 (예: http://localhost:3000/api/login -> /api/login)
         parsed_url = urlparse(target_url)
         target_endpoint = parsed_url.path if parsed_url.path else "/"
         
-        # 2. 중복 제거 (Deduplication) 로직
-        # 동일한 엔드포인트에 동일한 취약점이 발견되면 1개만 남깁니다.
         signature = f"{target_endpoint}_{http_method}_{vuln_type}"
         if signature in seen_signatures:
-            print(f"[DEBUG] 중복 취약점 발견 및 제외: {signature}")
             continue
             
         seen_signatures.add(signature)
-        
-        # 3. 응답 텍스트 슬라이싱 (LLM 컨텍스트 윈도우 초과 방지)
         sliced_resp = response_raw[:1000] + "..." if len(response_raw) > 1000 else response_raw
 
-        # 4. Pydantic 표준 규격으로 객체 생성
-        # [수정] 경로가 IP이거나 이상한 경우를 걸러내는 로직 추가
         if "." in target_endpoint and "/" not in target_endpoint:
-             target_endpoint = "/" # 호스트 정보만 있는 경우 루트로 간주
+             target_endpoint = "/"
              
         dast_result = DastSastResult(
             target_endpoint=target_endpoint,
@@ -70,12 +47,91 @@ def parse_nuclei_results(raw_results: List[Dict[str, Any]]) -> List[DastSastResu
             sliced_response=sliced_resp
         )
         
-        # [중요] 단순 탐지(Detect) 정보는 매핑할 코드가 없으므로 건너뜁니다.
         if "Detect" in vuln_type or "Fingerprint" in vuln_type:
-            print(f"ℹ️ [건너뜀] 단순 탐지 정보는 매핑에서 제외: {vuln_type}")
             continue
 
         parsed_results.append(dast_result)
 
-    # for문이 모두 끝난 후, 최종 완성된 리스트를 반환 (들여쓰기 주의)
     return parsed_results
+
+def parse_semgrep_results(raw_results: Dict[str, Any]) -> List[DastSastResult]:
+    """
+    Semgrep 스캐너의 원시 JSON 결과를 팀 표준 규격(DastSastResult)으로 변환한다.
+    """
+    parsed_results = []
+    results = raw_results.get("results", [])
+    
+    for item in results:
+        vuln_type = item.get("check_id", "Unknown SAST Finding")
+        extra = item.get("extra", {})
+        severity = extra.get("severity", "info").capitalize()
+        message = extra.get("message", "")
+        path = item.get("path")
+        line = item.get("start", {}).get("line")
+        
+        dast_result = DastSastResult(
+            target_endpoint="SAST_FINDING", 
+            http_method="N/A",
+            vuln_type=f"[SAST] {vuln_type}",
+            severity=severity,
+            request_headers={},
+            payload=f"File: {path}, Line: {line}",
+            sliced_response=message[:1000],
+            source_file=path,
+            source_line=line
+        )
+        parsed_results.append(dast_result)
+        
+    return parsed_results
+
+def parse_zap_results(raw_results: List[Dict[str, Any]]) -> List[DastSastResult]:
+    """
+    OWASP ZAP의 원시 JSON 결과를 팀 표준 규격(DastSastResult)으로 변환한다.
+    """
+    parsed_results = []
+    
+    for alert in raw_results:
+        vuln_type = alert.get("alert", "Unknown ZAP Alert")
+        risk = alert.get("risk", "Informational")
+        url = alert.get("url", "")
+        evidence = alert.get("evidence", "")
+        description = alert.get("description", "")
+        method = alert.get("method", "GET")
+        
+        parsed_url = urlparse(url)
+        target_endpoint = parsed_url.path if parsed_url.path else "/"
+        
+        dast_result = DastSastResult(
+            target_endpoint=target_endpoint,
+            http_method=method,
+            vuln_type=f"[ZAP] {vuln_type}",
+            severity=risk,
+            request_headers={},
+            payload=evidence if evidence else description[:200],
+            sliced_response=description[:1000]
+        )
+        parsed_results.append(dast_result)
+        
+    return parsed_results
+
+def normalize_and_merge_results(
+    dast_raw: List[Dict[str, Any]], 
+    sast_raw: Dict[str, Any],
+    zap_raw: Optional[List[Dict[str, Any]]] = None
+) -> List[DastSastResult]:
+    """
+    DAST(Nuclei), SAST(Semgrep), ZAP 결과를 통합하고 정규화한다.
+    """
+    dast_results = parse_nuclei_results(dast_raw)
+    sast_results = parse_semgrep_results(sast_raw)
+    
+    combined = dast_results + sast_results
+    
+    if zap_raw:
+        zap_results = parse_zap_results(zap_raw)
+        combined += zap_results
+        print(f"✅ [정규화] ZAP({len(zap_results)}) 결과 추가 통합")
+    
+    print(f"✅ [정규화] DAST({len(dast_results)}) + SAST({len(sast_results)}) = 총 {len(combined)}개의 결과 통합 완료")
+    
+    return combined

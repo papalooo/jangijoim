@@ -5,10 +5,3 @@ __pycache__/
 .env
 *.db
 reports/
-export_context.py
-
-# LLM Context Export Directory
-.llm_context/
-
-# LLM Context Export Directory
-./chronicle/

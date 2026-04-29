@@ -15,7 +15,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 RUN apt-get update && apt-get install -y wget unzip nmap tcpdump && \
     wget https://github.com/projectdiscovery/nuclei/releases/download/v3.2.0/nuclei_3.2.0_linux_amd64.zip && \
-    unzip nuclei_3.2.0_linux_amd64.zip && mv nuclei /usr/local/bin/ && rm nuclei_3.2.0_linux_amd64.zip && \
+    unzip -o nuclei_3.2.0_linux_amd64.zip && mv nuclei /usr/local/bin/ && rm nuclei_3.2.0_linux_amd64.zip && \
+    wget https://github.com/projectdiscovery/katana/releases/download/v1.1.0/katana_1.1.0_linux_amd64.zip && \
+    unzip -o katana_1.1.0_linux_amd64.zip && mv katana /usr/local/bin/ && rm katana_1.1.0_linux_amd64.zip && \
     pip install semgrep
 
 # 5. 프로젝트 소스 코드 전체 복사 (.dockerignore에 명시된 파일 제외)
