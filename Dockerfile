@@ -12,7 +12,8 @@ WORKDIR /app
 # requirements.txt만 먼저 복사하여 패키지 설치 단계를 도커 캐시로 활용
 COPY ../requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir "click>=8.1.7" "typer==0.12.5"
 RUN apt-get update && apt-get install -y wget unzip nmap tcpdump && \
     wget https://github.com/projectdiscovery/nuclei/releases/download/v3.2.0/nuclei_3.2.0_linux_amd64.zip && \
     unzip -o nuclei_3.2.0_linux_amd64.zip && mv nuclei /usr/local/bin/ && rm nuclei_3.2.0_linux_amd64.zip && \

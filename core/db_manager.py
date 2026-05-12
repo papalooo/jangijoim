@@ -1,13 +1,20 @@
 import sqlite3
 import json
-from typing import Optional
+import os
+from pathlib import Path
+from typing import Optional, List
 from pydantic import ValidationError
 from core.schemas import FinalReportState
 
-DB_PATH = "jobs.db"
+# 중앙 집중형 데이터 저장소 설정 (~/.jangijoim)
+HOME_DIR = Path.home()
+JANGIJOIM_DIR = HOME_DIR / ".jangijoim"
+DB_PATH = JANGIJOIM_DIR / "jobs.db"
 
 def init_db():
-    """데이터베이스와 테이블을 초기화합니다."""
+    """데이터베이스와 테이블을 초기화합니다. 저장 공간 디렉토리가 없으면 생성합니다."""
+    JANGIJOIM_DIR.mkdir(parents=True, exist_ok=True)
+    
     with sqlite3.connect(DB_PATH, check_same_thread=False) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
@@ -26,10 +33,7 @@ def save_job(job_id: str, state: FinalReportState):
         )
 
 def get_job(job_id: str) -> Optional[FinalReportState]:
-    """
-    DB에서 JSON 데이터를 읽어와 파이프라인 상태 객체로 복원합니다.
-    스키마가 변경된 이후 저장된 레거시 데이터의 역직렬화 실패를 방어합니다.
-    """
+    """DB에서 JSON 데이터를 읽어와 파이프라인 상태 객체로 복원합니다."""
     with sqlite3.connect(DB_PATH, check_same_thread=False) as conn:
         cursor = conn.execute("SELECT data FROM jobs WHERE job_id = ?", (str(job_id),))
         row = cursor.fetchone()
@@ -38,31 +42,41 @@ def get_job(job_id: str) -> Optional[FinalReportState]:
 
         try:
             return FinalReportState.model_validate_json(row[0])
-
         except ValidationError:
-            # ── 스키마 변경으로 역직렬화 실패 시 ──────────────────────────
-            # llm_verification 등 신규 필드가 빈 딕셔너리({})로 저장된
-            # 레거시 데이터를 정리하고 재시도합니다.
             try:
                 raw = json.loads(row[0])
-
-                # 빈 딕셔너리로 저장된 Optional 복합 필드를 None으로 교정
-                nullable_fields = [
-                    "llm_verification",
-                    "verification",
-                    "dast_result",
-                    "mapped_context",
-                    "execution",
-                    "patch",
-                    "regression_test",
-                ]
+                nullable_fields = ["llm_verification", "verification", "dast_result", "mapped_context", "execution", "patch", "regression_test"]
                 for field in nullable_fields:
                     if field in raw and raw[field] == {}:
                         raw[field] = None
-
                 return FinalReportState.model_validate(raw)
-
             except Exception as e:
-                # 복구 불가능한 경우 None 반환 (파이프라인이 404로 처리)
-                print(f"[db_manager] Job {job_id} 복구 실패, None 반환: {e}")
+                print(f"[db_manager] Job {job_id} 복구 실패: {e}")
                 return None
+
+def list_jobs(limit: int = 10) -> List[dict]:
+    """최근 스캔 작업 목록을 반환합니다."""
+    if not DB_PATH.exists():
+        return []
+        
+    with sqlite3.connect(DB_PATH, check_same_thread=False) as conn:
+        cursor = conn.execute(
+            "SELECT job_id, status, data FROM jobs ORDER BY rowid DESC LIMIT ?",
+            (limit,)
+        )
+        rows = cursor.fetchall()
+        
+        jobs = []
+        for row in rows:
+            try:
+                data = json.loads(row[2])
+                jobs.append({
+                    "job_id": row[0],
+                    "status": row[1],
+                    "target_host": data.get("metadata", {}).get("target_host"),
+                    "start_time": data.get("metadata", {}).get("start_time"),
+                    "vuln_count": len(data.get("vulnerabilities", []))
+                })
+            except:
+                continue
+        return jobs

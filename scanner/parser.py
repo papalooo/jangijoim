@@ -47,9 +47,9 @@ def parse_nuclei_results(raw_results: List[Dict[str, Any]]) -> List[DastSastResu
             sliced_response=sliced_resp
         )
         
-        if "Detect" in vuln_type or "Fingerprint" in vuln_type:
-            continue
-
+        # 특정 패턴 필터링 (기존에는 Detect, Fingerprint를 제외했으나 가시성을 위해 완화)
+        # LLM Triager가 최종적으로 정오탐을 걸러낼 수 있도록 모든 결과를 일단 허용합니다.
+        
         parsed_results.append(dast_result)
 
     return parsed_results

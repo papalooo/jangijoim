@@ -1,66 +1,120 @@
-# 🛡️ JANGIJOIM: AI-Driven Security Pipeline
+# ♊ JANGIJOIM: LLM-Based Web Vulnerability Scanner & Auto-Patcher
 
-JANGIJOIM은 LLM(대규모 언어 모델) 멀티 에이전트 시스템을 활용하여 웹 애플리케이션의 취약점을 탐지, 분석하고 시큐어 코딩 패치 제안을 생성하는 차세대 DevSecOps 자동화 플랫폼입니다.
-
----
-
-## 🌟 주요 특징 (Core Features)
-
--   **🎯 하이브리드 스캔 (DAST + SAST):** Nuclei와 Semgrep을 병렬로 구동하여 웹 트래픽과 소스코드를 동시 분석합니다.
--   **🌍 범용 코드 매핑 (Universal Mapper):** 언어와 프레임워크에 상관없이(Python, JS/TS, Java 등) 탐지된 엔드포인트를 소스코드 내 함수 블록으로 역추적합니다.
--   **🧠 4중 LLM 에이전트 시스템:**
-    -   **Triager:** DAST/SAST 결과를 교차 검증하여 정오탐을 판별하고 CVSS 점수를 산정합니다.
-    -   **Red Teamer:** 실제 공격 가능성을 증명하기 위한 PoC 익스플로잇 페이로드를 생성합니다.
-    -   **Blue Teamer:** 비즈니스 로직을 유지하면서 취약점을 차단하는 시큐어 코딩 패치를 제안합니다.
-    -   **QA Auditor:** 제안된 패치 코드의 품질과 안정성을 최종 검수합니다.
--   **📊 자동 통합 보고서:** 모든 진단 프로세스와 AI의 분석 근거, 패치 전후 코드를 포함한 전문적인 Markdown 보고서를 자동 출력합니다.
+JANGIJOIM은 **LLM(Large Language Model) 기반의 지능형 웹 취약점 진단 및 자동 패치 플랫폼**입니다. DAST(Katana, Nuclei)와 SAST(Semgrep)를 결합하여 취약점을 탐지하고, Google Gemini Pro를 통해 정오탐 판별 및 소스코드 패치를 자동으로 수행합니다.
 
 ---
 
-## 🏗 시스템 아키텍처 (Architecture)
+## 🚀 빠른 시작 가이드 (Quick Start)
 
-1.  **Core (Role 1):** FastAPI 기반 비동기 오케스트레이션 및 데이터 관리.
-2.  **Scanner (Role 2):** 스캔 엔진 제어 및 PoC 페이로드 검증 실행.
-3.  **Intelligence (Role 3):** Gemini API 연동 멀티 에이전트 추론 및 리포팅.
-4.  **Mapping (Role 4):** AST 및 문자열 휴리스틱 기반 코드 블록 추출.
+본 프로젝트는 **Docker** 환경에서 실행되는 것을 원칙으로 합니다. 로컬 환경에 별도의 보안 도구를 설치할 필요가 없습니다.
 
----
+### 1. 운영체제별 레포지토리 클론 및 의존성 설치
+먼저, JANGIJOIM 레포지토리를 로컬에 클론하고 파이썬 의존성을 설치합니다.
 
-## 🚀 시작하기 (Getting Started)
-
-### 📋 사전 요구 사항
--   **Docker & Docker Compose**
--   **Git** (분석 대상 소스코드 관리용)
--   **Gemini API Key** (`.env` 파일에 설정 필요)
-
-### 1. 프로젝트 설치
-```bash
-git clone https://github.com/your-repo/jangijoim.git
+**🖥️ Windows (PowerShell) 환경**
+```powershell
+# 1. 레포지토리 클론
+git clone https://github.com/papalooo/jangijoim.git
 cd jangijoim
-cp .env.example .env # GEMINI_API_KEY 입력
+
+# 2. 로컬 파이썬 의존성 설치
+pip install -r requirements.txt
 ```
 
-### 2. 테스트 환경(OWASP Juice Shop) 및 엔진 가동
+**🍎 Mac / 🐧 Linux (Bash/Zsh) 환경**
 ```bash
-# 1. 소스코드 준비
-git clone --depth 1 https://github.com/juice-shop/juice-shop.git juice-shop-src
+# 1. 레포지토리 클론
+git clone https://github.com/papalooo/jangijoim.git
+cd jangijoim
 
-# 2. 컨테이너 가동
-docker-compose up --build -d
+# 2. 로컬 파이썬 의존성 설치
+pip install -r requirements.txt
 ```
 
-### 3. 진단 실행
+### 2. 환경 설정
+프로젝트 루트에 `.env` 파일을 생성하고 Google AI Studio에서 발급받은 Gemini API 키를 입력합니다.
+
+**🖥️ Windows (PowerShell) 환경**
+```powershell
+Set-Content -Path .env -Value "GEMINI_API_KEY=your_api_key_here" -Encoding utf8
+```
+
+**🍎 Mac / 🐧 Linux (Bash/Zsh) 환경**
 ```bash
-docker exec -it gemini_engine python main.py scan start http://juice-shop:3000 ./juice-shop-src
+echo "GEMINI_API_KEY=your_api_key_here" > .env
 ```
 
-### 4. 결과 확인
-진단이 완료되면 컨테이너 내부의 `reports/` 폴더 또는 로컬의 매핑된 디렉토리에서 상세 Markdown 보고서를 확인할 수 있습니다.
+### 3. 엔진 및 서비스 가동 (Docker)
+Docker Compose를 사용하여 스캔 엔진, 정밀 스캐너(ZAP), 그리고 테스트용 앱(Juice Shop)을 한 번에 실행합니다. (Node.js 사전 설치 필요)
+
+**🖥️ Windows (PowerShell) 환경**
+```powershell
+# 프론트엔드 빌드 (정적 파일 생성)
+cd frontend; npm install; npm run build; cd ..
+
+# 컨테이너 백그라운드 실행
+docker-compose up -d --build
+```
+
+**🍎 Mac / 🐧 Linux (Bash/Zsh) 환경**
+```bash
+# 프론트엔드 빌드 (정적 파일 생성)
+cd frontend && npm install && npm run build && cd ..
+
+# 컨테이너 백그라운드 실행
+docker-compose up -d --build
+```
+
+### 4. CLI를 이용한 스캔 시작
+모든 컨테이너가 정상적으로 실행되었다면, 로컬 터미널에서 `main.py`를 통해 스캔을 요청할 수 있습니다. 
+엔진이 Docker 컨테이너 내부에 있으므로 로컬에 보안 도구를 설치하지 않아도 작동합니다.
+
+(아래 파이썬 실행 명령어는 Windows와 Mac/Linux 환경에서 동일합니다)
+
+CLI 명령어 예시:
+```bash
+# 기본 스캔 시작
+python main.py scan start --target-url http://juice-shop:3000 --source-dir /app/juice-shop-src
+
+# CLI 도움말 및 전체 명령어 확인
+python main.py --help
+python main.py scan --help
+```
 
 ---
 
-## 🤝 협업 및 기여 규칙
-본 프로젝트는 특정 브랜치 전략(GitFlow)과 커밋 컨벤션을 따릅니다. 상세 내용은 [CONTRIBUTING.md](./CONTRIBUTING.md) 및 [GEMINI.md](./GEMINI.md)를 참고해 주십시오.
+## 🖥 주요 기능 활용법
+
+### 1. 실시간 대시보드 (Web UI)
+브라우저에서 `http://localhost:8000`에 접속하면 실시간으로 진행되는 공격 과정과 탐지 결과를 확인할 수 있습니다.
+- **Dashboard:** 현재 진행 중인 스캔 로그 및 취약점 리스트 표시
+- **Scan History:** 과거 스캔 기록 조회 및 결과 재확인
+- **Settings:** LLM 모델 설정 및 스캔 옵션(병렬 처리 등) 확인
+
+### 2. 지능형 파이프라인 프로세스
+1. **Scanning:** Katana(JS 크롤링) + Nuclei(DAST) + Semgrep(SAST) 병렬 구동
+2. **Mapping:** 탐지된 취약점을 소스코드 위치와 매핑 (AST 분석)
+3. **Triage:** Gemini LLM이 코드를 분석하여 정탐/오탐 최종 판별
+4. **PoC Verify:** 생성된 페이로드를 실제 타겟에 전송하여 취약성 검증
+5. **Reporting:** 상세 마크다운 보고서 및 재실행 가능한 PoC 매니페스트 생성
+
+### 3. PoC 재실행 도구
+스캔 완료 후 생성된 `JANGIJOIM_Summary_*.md` 결과와 함께 생성된 매니페스트를 사용하여 특정 취약점을 다시 테스트할 수 있습니다.
+```bash
+python main.py poc run ./reports/poc_manifest_XXXXXX.json
+```
 
 ---
-*Developed with ♊ Gemini CLI - Empowering Automated Security.*
+
+## 🛠 기술 스택
+- **Backend:** FastAPI, Pydantic v2, Typer, SQLite
+- **Frontend:** React (Vite), TailwindCSS, Lucide React
+- **Security Tools:** Nuclei, Katana, Semgrep, OWASP ZAP
+- **AI Engine:** Google Gemini 1.5 / 2.0 Pro
+
+## 📝 참고 사항
+- **Source Mapping:** `--source-dir` 경로는 엔진 컨테이너 내부 경로인 `/app/juice-shop-src` 등을 사용하거나, 컨테이너에 적절히 마운트된 경로여야 합니다.
+- **Stability:** 본 프로젝트는 Docker 환경에서 최적의 성능과 안정성을 제공합니다.
+
+---
+**Happy Hacking & Patching!** 🛡️

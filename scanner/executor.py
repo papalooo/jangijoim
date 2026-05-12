@@ -3,12 +3,22 @@ import asyncio
 import time
 import re
 from core.schemas import ExecutionResult, ExploitPayload, DastSastResult
+from core.ws_manager import manager as ws_manager
 
-async def run_exploit(target_url: str, dast_res: DastSastResult, payload_data: ExploitPayload) -> ExecutionResult:
+async def run_exploit(target_url: str, dast_res: DastSastResult, payload_data: ExploitPayload, job_id: str = None) -> ExecutionResult:
     """
     [Role 2] 4단계: AI가 생성한 페이로드를 실제 타겟에 전송하고 결과를 검증합니다.
     """
-    print(f"\n[DEBUG] 🔫 타겟({target_url})으로 PoC 공격 발사 중...")
+    msg = f"🔫 타겟({target_url})으로 PoC 공격 발사 중..."
+    print(f"\n[DEBUG] {msg}")
+    
+    if job_id:
+        await ws_manager.broadcast(job_id, {
+            "type": "log",
+            "level": "info",
+            "message": msg,
+            "vuln_type": dast_res.vuln_type
+        })
 
     # AI가 제안한 엔드포인트와 메서드 사용 (없으면 DAST 정보 활용)
     endpoint = payload_data.endpoint if payload_data.endpoint else dast_res.target_endpoint
@@ -22,6 +32,15 @@ async def run_exploit(target_url: str, dast_res: DastSastResult, payload_data: E
     start_time = time.time()
 
     try:
+        if job_id:
+            await ws_manager.broadcast(job_id, {
+                "type": "request",
+                "method": method,
+                "url": full_url,
+                "headers": headers,
+                "body": body
+            })
+
         # 비동기 환경에서의 요청 처리를 위해 루프에서 실행하거나 httpx 사용 권장
         # 여기서는 기존 requests 호환성을 위해 유지하되 timeout 설정
 
@@ -57,7 +76,17 @@ async def run_exploit(target_url: str, dast_res: DastSastResult, payload_data: E
             if status_code < 400:
                 is_exploited = True
 
-        print(f"[DEBUG] 💥 결과: HTTP {status_code}, 정규식 매칭({is_exploited}), {exec_time_ms}ms")
+        res_msg = f"💥 결과: HTTP {status_code}, 정규식 매칭({is_exploited}), {exec_time_ms}ms"
+        print(f"[DEBUG] {res_msg}")
+
+        if job_id:
+            await ws_manager.broadcast(job_id, {
+                "type": "execution_result",
+                "is_exploited": is_exploited,
+                "status_code": status_code,
+                "exec_time_ms": exec_time_ms,
+                "response_snippet": response_text[:1000]
+            })
 
         return ExecutionResult(
             is_exploited=is_exploited,
@@ -69,10 +98,16 @@ async def run_exploit(target_url: str, dast_res: DastSastResult, payload_data: E
 
     except Exception as e:
         end_time = time.time()
+        err_msg = str(e)
+        if job_id:
+            await ws_manager.broadcast(job_id, {
+                "type": "error",
+                "message": f"PoC 실행 중 오류 발생: {err_msg}"
+            })
         return ExecutionResult(
             is_exploited=False,
             http_status=0,
             execution_time_ms=int((end_time - start_time) * 1000),
             response_snippet="",
-            error_message=str(e)
+            error_message=err_msg
         )

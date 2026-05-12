@@ -1,12 +1,13 @@
 import typer
 import uvicorn
-from core.cli import app as cli_app
+from core.cli import app as cli_app, poc_app
 
 # 최상위 Typer 애플리케이션 생성
 app = typer.Typer(help="jangijoim: DevSecOps 자동 진단 및 패치 파이프라인 통합 CLI")
 
-# core/cli.py에서 만든 운전대 명령어들을 'scan' 이라는 그룹으로 묶어서 가져옵니다.
+# 명령어 그룹들을 등록합니다.
 app.add_typer(cli_app, name="scan", help="취약점 진단 및 상태 추적 명령어 그룹")
+app.add_typer(poc_app, name="poc", help="PoC 페이로드 재실행 및 검증 도구")
 
 @app.command()
 def serve(

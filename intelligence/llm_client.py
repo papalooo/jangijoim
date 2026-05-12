@@ -49,7 +49,20 @@ async def _call_gemini(system_prompt: str, user_prompt: str) -> dict:
                     response_mime_type="application/json",
                 )
             )
-            return json.loads(response.text)
+            
+            raw_text = response.text.strip()
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:-3].strip()
+            elif raw_text.startswith("```"):
+                raw_text = raw_text[3:-3].strip()
+                
+            try:
+                return json.loads(raw_text)
+            except json.JSONDecodeError:
+                import re
+                # JSON 표준 이스케이프가 아닌 단일 백슬래시를 이중 백슬래시로 변환
+                fixed_text = re.sub(r'\\([^"\\/bfnrt])', r'\\\\\1', raw_text)
+                return json.loads(fixed_text)
             
         except Exception as e:
             error_str = str(e)
@@ -245,15 +258,24 @@ async def _run_qa(patch: PatchProposal) -> tuple[bool, str]:
     return result.get("qa_passed", False), result.get("qa_feedback", "QA 피드백 누락")
 
 
+from core.ws_manager import manager as ws_manager
+from datetime import datetime
+
+async def log_to_ws(job_id: Optional[str], message: str, level: str = "info"):
+    if job_id:
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        await ws_manager.broadcast(job_id, {"type": "log", "message": message, "level": level, "timestamp": timestamp})
+
 # =====================================================================
 # [Public API] orchestrator.py에서 호출하는 메인 함수
 # =====================================================================
 
-async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext]) -> List[LlmVerification]:
+async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext], job_id: Optional[str] = None) -> List[LlmVerification]:
     """
     [4중 멀티 에이전트 파이프라인 - 병렬 처리]
     각 항목에 대해 Triager → Red Teamer → Blue Teamer → QA 순서로 실행하며,
-    여러 항목을 동시에 처리합니다. (API 쿼터 보호를 위해 세마포어 사용)
+    여러 항목을 동시에 처리합니다.
+    (기존 Semaphore(1) 제한을 풀고 3개 정도로 완화하며 지수 백오프에 의존합니다)
     """
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
@@ -261,26 +283,34 @@ async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext]) -> 
     if not mapped_contexts:
         return []
 
-    # 쿼터 제한을 고려하여 동시 처리 개수 제한 (1개로 축소하여 순차적 처리 유도)
-    semaphore = asyncio.Semaphore(1)
+    # 동시 처리 개수를 3개로 완화 (Gemini Pro 등급 쿼터 고려)
+    semaphore = asyncio.Semaphore(3)
 
     async def process_item(idx, ctx):
         async with semaphore:
-            print(f"[Agent Pipeline] 항목 {idx + 1} 처리 시작... ({ctx.dast_data.vuln_type})")
+            msg = f"🤖 [LLM Agent] 항목 {idx + 1} 처리 시작... ({ctx.dast_data.vuln_type})"
+            print(msg)
+            await log_to_ws(job_id, msg)
             try:
                 # Agent 1: Triager
+                await log_to_ws(job_id, f"  └ [Triager] 정오탐 판별 중... ({idx + 1})")
                 triager_result = await _run_triager(ctx)
 
                 # Agent 2: Red Teamer
+                await log_to_ws(job_id, f"  └ [Red Teamer] 익스플로잇 페이로드 생성 중... ({idx + 1})")
                 red_teamer_payload = await _run_red_teamer(ctx, triager_result)
 
                 # Agent 3: Blue Teamer
+                await log_to_ws(job_id, f"  └ [Blue Teamer] 보안 패치 코드 작성 중... ({idx + 1})")
                 blue_teamer_patch = await _run_blue_teamer(ctx, triager_result)
 
                 # Agent 4: QA
+                await log_to_ws(job_id, f"  └ [QA] 생성된 패치 검수 중... ({idx + 1})")
                 qa_passed, qa_feedback = await _run_qa(blue_teamer_patch)
 
-                print(f"✅ [Agent Pipeline] 항목 {idx + 1} 처리 완료")
+                done_msg = f"✅ [LLM Agent] 항목 {idx + 1} 파이프라인 완료"
+                print(done_msg)
+                await log_to_ws(job_id, done_msg, "success")
                 return LlmVerification(
                     triager_result=triager_result,
                     red_teamer_payload=red_teamer_payload,
@@ -315,3 +345,107 @@ async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext]) -> 
     # 모든 항목에 대해 병렬 작업 생성
     tasks = [process_item(i, ctx) for i, ctx in enumerate(mapped_contexts)]
     return await asyncio.gather(*tasks)
+
+# =====================================================================
+# [Tests] 모듈 자체 테스트 코드
+# =====================================================================
+if __name__ == "__main__":
+    from core.schemas import DastSastResult, FinalReportState, ScanMetadata, VulnerabilityItem, RegressionTestResult
+    from intelligence.reporter import generate_markdown_report
+
+    async def run_pipeline_test():
+        print("🚀 Role 3 테스트를 위한 가짜(Mock) 데이터 생성 중...")
+        
+        # 1. Mock 데이터 생성 (중복 취약점 테스트를 위해 2개 생성)
+        mock_dast1 = DastSastResult(
+            target_endpoint="/api/login",
+            http_method="POST",
+            vuln_type="SQL Injection",
+            severity="High",
+            payload="' OR 1=1 --",
+            sliced_response="sqlite3.OperationalError: unrecognized token"
+        )
+        
+        mock_context1 = MappedContext(
+            dast_data=mock_dast1,
+            is_mapped=True,
+            mapped_file_path="juice-shop-src/routes/login.ts",
+            ast_node_type="FunctionDef",
+            start_line=10,
+            end_line=20,
+            code_snippet='''
+    app.post('/api/login', (req, res) => {
+      const query = `SELECT * FROM Users WHERE email = '${req.body.email}' AND password = '${req.body.password}'`
+      db.query(query).then(user => { ... })
+    })
+    '''
+        )
+
+        mock_dast2 = DastSastResult(
+            target_endpoint="/api/login",
+            http_method="POST",
+            vuln_type="SQL Injection",
+            severity="High",
+            payload="' OR 'a'='a",
+            sliced_response="sqlite3.OperationalError: unrecognized token"
+        )
+        
+        mock_context2 = MappedContext(
+            dast_data=mock_dast2,
+            is_mapped=True,
+            mapped_file_path="juice-shop-src/routes/login.ts",
+            ast_node_type="FunctionDef",
+            start_line=10,
+            end_line=20,
+            code_snippet='''
+    app.post('/api/login', (req, res) => {
+      const query = `SELECT * FROM Users WHERE email = '${req.body.email}' AND password = '${req.body.password}'`
+      db.query(query).then(user => { ... })
+    })
+    '''
+        )
+
+        print("🤖 멀티 에이전트 파이프라인 가동! (병렬 처리)")
+        try:
+            # 1. LLM 추론 파이프라인 실행
+            llm_results = await verify_vulnerabilities_batch([mock_context1, mock_context2])
+            print(f"\n[+] LLM {len(llm_results)}개 항목 처리 완료")
+            
+            # 2. 파이프라인 최종 상태(FinalReportState) 구성
+            mock_metadata = ScanMetadata(
+                target_host="http://localhost:3000",
+                source_dir="./juice-shop-src"
+            )
+            
+            vulnerabilities = []
+            for i, (ctx, llm_res) in enumerate(zip([mock_context1, mock_context2], llm_results)):
+                # 모의 회귀 테스트 결과 (하나는 성공, 하나는 실패로 시뮬레이션 가능)
+                regression = RegressionTestResult(
+                    is_mitigated=True if i == 0 else False,
+                    http_status_after_patch=403 if i == 0 else 200,
+                    rollback_successful=True
+                )
+                
+                vulnerabilities.append(VulnerabilityItem(
+                    dast_result=ctx.dast_data,
+                    mapped_context=ctx,
+                    llm_verification=llm_res,
+                    regression_test=regression
+                ))
+                
+            final_state = FinalReportState(
+                metadata=mock_metadata,
+                vulnerabilities=vulnerabilities
+            )
+            
+            # 3. 마크다운 보고서 렌더링 함수 호출
+            report_path = generate_markdown_report(final_state)
+            print(f"\n✅ 테스트 완료! 상세 보고서가 성공적으로 생성되었습니다.")
+            print(f"👉 확인 경로: {report_path}")
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"\n❌ [오류 발생]: {e}")
+
+    asyncio.run(run_pipeline_test())

@@ -35,17 +35,21 @@ def _normalize_path(raw_path: str) -> str:
 def _find_functional_block_heuristic(lines: List[str], hit_line_idx: int) -> tuple[int, int, str]:
     """
     히트된 라인 주변에서 함수 블록을 휴리스틱하게 추출합니다.
-    1. 히트 라인 기준 위로 10줄까지 '함수 정의' 키워드를 찾습니다.
+    1. 히트 라인 기준 위로 15줄까지 '함수 정의' 키워드를 찾습니다.
     2. 블록의 끝은 중괄호 {} 밸런스 또는 파이썬식 들여쓰기를 기준으로 판단합니다.
     """
     start_line = hit_line_idx
-    # 함수 정의 키워드 (언어 공통)
-    func_keywords = re.compile(r"\b(def|function|async|public|private|static|void|class|=>)\b")
+    # 함수 정의 키워드 (언어 공통, 라우터 패턴 포함)
+    func_keywords = re.compile(r"\b(def|function|async|public|private|static|void|class|=>|get|post|put|delete|patch|app\.|router\.)\b", re.IGNORECASE)
     
-    # 1. 위로 올라가며 시작 지점 탐색
-    for i in range(hit_line_idx, max(-1, hit_line_idx - 10), -1):
+    # 1. 위로 올라가며 시작 지점 탐색 (최대 15줄)
+    for i in range(hit_line_idx, max(-1, hit_line_idx - 15), -1):
         if func_keywords.search(lines[i]):
-            start_line = i
+            # 데코레이터(@)가 바로 위에 있다면 그것도 포함
+            if i > 0 and lines[i-1].strip().startswith("@"):
+                start_line = i - 1
+            else:
+                start_line = i
             break
             
     # 2. 아래로 내려가며 종료 지점 탐색
@@ -53,22 +57,26 @@ def _find_functional_block_heuristic(lines: List[str], hit_line_idx: int) -> tup
     brace_count = 0
     found_brace = False
     
-    # 중괄호 기반 언어 (JS, Java, Go, C# 등)
-    if "{" in "".join(lines[start_line:hit_line_idx + 5]):
-        for i in range(start_line, min(len(lines), start_line + 50)):
-            brace_count += lines[i].count("{")
-            brace_count -= lines[i].count("}")
-            if "{" in lines[i]: found_brace = True
+    # 중괄호 기반 언어 (JS, Java, Go, C# 등) 여부 확인
+    look_ahead = "".join(lines[start_line:min(len(lines), start_line + 5)])
+    if "{" in look_ahead:
+        for i in range(start_line, min(len(lines), start_line + 100)):
+            line_clean = re.sub(r'//.*|/\*.*?\*/', '', lines[i]) # 주석 제거 후 카운트
+            brace_count += line_clean.count("{")
+            brace_count -= line_clean.count("}")
+            if "{" in line_clean: found_brace = True
             if found_brace and brace_count <= 0:
                 end_line = i
                 break
+            end_line = i
     else:
-        # 파이썬 등 들여쓰기 기반 (또는 중괄호가 없는 간단한 경우)
+        # 파이썬 등 들여쓰기 기반
         start_indent = len(lines[start_line]) - len(lines[start_line].lstrip())
-        for i in range(start_line + 1, min(len(lines), start_line + 50)):
+        for i in range(start_line + 1, min(len(lines), start_line + 100)):
             line = lines[i]
-            if not line.strip(): continue
+            if not line.strip(): continue # 빈 줄은 무시
             current_indent = len(line) - len(line.lstrip())
+            # 시작 줄보다 들여쓰기가 작거나 같으면 블록 종료 (단, 완전히 빈 줄이 아니어야 함)
             if current_indent <= start_indent and line.strip():
                 end_line = i - 1
                 break
@@ -199,6 +207,9 @@ def find_router_universally(source_dir: str, dast_data: DastSastResult) -> Dict[
                     if f'"{term}"' in line or f"'{term}'" in line or f"`{term}`" in line:
                         match_type = "exact" if term == target_path or term == target_path.lstrip("/") else "partial"
                         break
+                    elif term in line.lower() and re.search(r'\b(def|function|class|async|router)\b', line.lower()):
+                        match_type = "partial"
+                        break
                 
                 if match_type:
                     # 2. 주변 함수 블록 추출
@@ -211,6 +222,12 @@ def find_router_universally(source_dir: str, dast_data: DastSastResult) -> Dict[
                         if m in line_upper:
                             method_hint = m
                             break
+                            
+                    # 4. 심볼 이름 찾기
+                    symbol_name = None
+                    sym_m = re.search(r'\b(?:def|function|class)\s+([a-zA-Z0-9_]+)', snippet)
+                    if sym_m:
+                        symbol_name = sym_m.group(1)
                     
                     candidates.append({
                         "file_path": file_path,
@@ -219,11 +236,11 @@ def find_router_universally(source_dir: str, dast_data: DastSastResult) -> Dict[
                         "snippet": snippet,
                         "route_match_type": match_type,
                         "method_hint": method_hint,
-                        "symbol_name": None 
+                        "symbol_name": symbol_name 
                     })
 
     if not candidates:
-        return {"is_mapped": False, "mapping_failure_reason": "no_string_match_found"}
+        return {"is_mapped": False, "mapping_failure_reason": "no_string_match_found", "mapping_evidence": ["no_candidates_found"]}
 
     # 4. 후보군 점수 산정 및 최적 선정
     for c in candidates:
@@ -232,13 +249,15 @@ def find_router_universally(source_dir: str, dast_data: DastSastResult) -> Dict[
     best = sorted(candidates, key=lambda x: x["score"], reverse=True)[0]
     
     if best["score"] < 0.2:
-        return {"is_mapped": False, "mapping_failure_reason": "low_confidence_score"}
+        return {"is_mapped": False, "mapping_failure_reason": "low_confidence_score", "mapping_evidence": [f"highest_score={best['score']}"]}
 
     # 결과 포맷팅 (schemas.MappedContext 규격에 맞춤)
     rel_path = os.path.relpath(best["file_path"], source_dir)
     confidence = best["score"]
     band = MappingConfidenceBand.HIGH if confidence >= 0.7 else \
            MappingConfidenceBand.MEDIUM if confidence >= 0.4 else MappingConfidenceBand.LOW
+
+    mapping_method = MappingMethod.AST_LIGHT if best["route_match_type"] == "exact" else MappingMethod.FULL_SCAN
 
     return {
         "is_mapped": True,
@@ -248,7 +267,7 @@ def find_router_universally(source_dir: str, dast_data: DastSastResult) -> Dict[
         "snippet": best["snippet"],
         "node_type": "UniversalFunctionalBlock",
         "symbol_name": best.get("symbol_name"),
-        "mapping_method": MappingMethod.FULL_SCAN,
+        "mapping_method": mapping_method,
         "mapping_confidence": confidence,
         "mapping_confidence_band": band,
         "mapping_evidence": [f"universal_string_match_{best['route_match_type']}", f"score={confidence}"],
@@ -256,11 +275,36 @@ def find_router_universally(source_dir: str, dast_data: DastSastResult) -> Dict[
         "sast_rule_ids": []
     }
 
+from mapping.python_ast import PythonASTMapper
+
 async def map_vulnerability_to_code(dast_data: DastSastResult, source_dir: str) -> MappedContext:
     """
     [Universal 진입점]
-    언어에 종속되지 않는 범용 매핑 로직을 실행합니다.
+    정밀 AST 매퍼(Python 등)를 먼저 시도하고, 실패 시 범용 휴리스틱 매핑을 실행합니다.
     """
+    # 1. 정밀 AST 매핑 시도 (현재 Python만 지원)
+    python_mapper = PythonASTMapper(source_dir)
+    # 인덱스 빌드는 오케스트레이터 차원에서 캐싱하는 것이 좋으나, 현재는 매번 수행 (향후 최적화 대상)
+    await asyncio.to_thread(python_mapper.build_index)
+    ast_match = python_mapper.find_match(dast_data)
+
+    if ast_match:
+        return MappedContext(
+            dast_data=dast_data,
+            is_mapped=True,
+            mapped_file_path=ast_match["file_path"],
+            ast_node_type="FunctionDef",
+            start_line=ast_match["start_line"],
+            end_line=ast_match["end_line"],
+            mapped_symbol=ast_match["symbol"],
+            mapping_method=MappingMethod.AST_LIGHT,
+            mapping_confidence=ast_match["score"],
+            mapping_confidence_band=MappingConfidenceBand.HIGH if ast_match["score"] >= 0.7 else MappingConfidenceBand.MEDIUM,
+            mapping_evidence=["precise_ast_decorator_match"],
+            code_snippet=ast_match["snippet"]
+        )
+
+    # 2. 범용 휴리스틱 매핑 (Fallback)
     mapping_result = await asyncio.to_thread(find_router_universally, source_dir, dast_data)
 
     return MappedContext(
@@ -270,7 +314,7 @@ async def map_vulnerability_to_code(dast_data: DastSastResult, source_dir: str) 
         ast_node_type=mapping_result.get("node_type"),
         start_line=mapping_result.get("start_line"),
         end_line=mapping_result.get("end_line"),
-        mapped_symbol=mapping_result.get("mapped_symbol"),
+        mapped_symbol=mapping_result.get("symbol_name"),
         mapping_method=mapping_result.get("mapping_method", MappingMethod.NONE),
         mapping_confidence=mapping_result.get("mapping_confidence", 0.0),
         mapping_confidence_band=mapping_result.get("mapping_confidence_band", MappingConfidenceBand.NONE),
@@ -279,3 +323,100 @@ async def map_vulnerability_to_code(dast_data: DastSastResult, source_dir: str) 
         code_snippet=mapping_result.get("snippet", ""),
         sast_rule_ids=mapping_result.get("sast_rule_ids", []),
     )
+
+# =====================================================================
+# [Tests] 모듈 자체 테스트 코드
+# =====================================================================
+if __name__ == "__main__":
+    import tempfile
+    import textwrap
+    import unittest
+
+    class Stage3MappingContractTests(unittest.IsolatedAsyncioTestCase):
+        async def test_ast_exact_match_contract(self):
+            with tempfile.TemporaryDirectory() as temp_dir:
+                app_path = os.path.join(temp_dir, "app.py")
+                with open(app_path, "w", encoding="utf-8") as f:
+                    f.write(textwrap.dedent("""
+                        from fastapi import FastAPI, Form
+
+                        app = FastAPI()
+
+                        @app.post("/api/login")
+                        async def login_sqli(username: str = Form(...), password: str = Form(...)):
+                            query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"
+                            return query
+                    """).strip())
+
+                dast = DastSastResult(
+                    target_endpoint="/api/login",
+                    http_method="POST",
+                    vuln_type="SQL Injection",
+                    severity="High",
+                    payload="' OR 1=1 --",
+                    sliced_response="sqlite error",
+                )
+
+                mapped = await map_vulnerability_to_code(dast, temp_dir)
+
+                self.assertTrue(mapped.is_mapped)
+                self.assertEqual(mapped.mapping_method, MappingMethod.AST_LIGHT)
+                self.assertGreaterEqual(mapped.mapping_confidence, 0.6)
+                self.assertIn(mapped.mapping_confidence_band, {MappingConfidenceBand.HIGH, MappingConfidenceBand.MEDIUM})
+                self.assertIsNotNone(mapped.mapped_file_path)
+                self.assertIsNotNone(mapped.mapped_symbol)
+                self.assertTrue(len(mapped.mapping_evidence) > 0)
+                self.assertIsNone(mapped.mapping_failure_reason)
+
+        async def test_full_scan_fallback_contract(self):
+            with tempfile.TemporaryDirectory() as temp_dir:
+                app_path = os.path.join(temp_dir, "handlers.py")
+                with open(app_path, "w", encoding="utf-8") as f:
+                    f.write(textwrap.dedent("""
+                        def login_handler(username, password):
+                            query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"
+                            return query
+                    """).strip())
+
+                dast = DastSastResult(
+                    target_endpoint="/login",
+                    http_method="POST",
+                    vuln_type="SQL Injection",
+                    severity="High",
+                    payload="username admin password",
+                    sliced_response="syntax error",
+                )
+
+                mapped = await map_vulnerability_to_code(dast, temp_dir)
+
+                self.assertTrue(mapped.is_mapped)
+                self.assertEqual(mapped.mapping_method, MappingMethod.FULL_SCAN)
+                self.assertGreater(mapped.mapping_confidence, 0.0)
+                self.assertTrue(len(mapped.mapping_evidence) > 0)
+                self.assertIsNone(mapped.mapping_failure_reason)
+
+        async def test_unmapped_contract_fields(self):
+            with tempfile.TemporaryDirectory() as temp_dir:
+                app_path = os.path.join(temp_dir, "safe.py")
+                with open(app_path, "w", encoding="utf-8") as f:
+                    f.write("def healthcheck():\n    return {'status': 'ok'}\n")
+
+                dast = DastSastResult(
+                    target_endpoint="/api/does-not-exist",
+                    http_method="GET",
+                    vuln_type="Unknown Vulnerability",
+                    severity="Low",
+                    payload="noop",
+                    sliced_response="n/a",
+                )
+
+                mapped = await map_vulnerability_to_code(dast, temp_dir)
+
+                self.assertFalse(mapped.is_mapped)
+                self.assertEqual(mapped.mapping_method, MappingMethod.NONE)
+                self.assertEqual(mapped.mapping_confidence, 0.0)
+                self.assertEqual(mapped.mapping_confidence_band, MappingConfidenceBand.NONE)
+                self.assertIsNotNone(mapped.mapping_failure_reason)
+                self.assertTrue(len(mapped.mapping_evidence) > 0)
+
+    unittest.main()

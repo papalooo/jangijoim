@@ -17,6 +17,7 @@ class ScanStatus(str, Enum):
     TESTING = "TESTING"           # 페이로드 검증 및 회귀 테스트 중
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    RECOVERY = "RECOVERY"         # 오류 복구 시도 중
 
 class ScanMetadata(BaseModel):
     """스캔 작업 자체의 고유 정보 및 시간 추적"""
