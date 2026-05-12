@@ -31,6 +31,9 @@ async def run_exploit(target_url: str, dast_res: DastSastResult, payload_data: E
     # ⏱️ 시간 측정 시작
     start_time = time.time()
 
+    # 타임아웃 설정 (연결 5초, 읽기 10초)
+    TIMEOUT_CONFIG = (5.0, 10.0)
+
     try:
         if job_id:
             await ws_manager.broadcast(job_id, {
@@ -41,21 +44,18 @@ async def run_exploit(target_url: str, dast_res: DastSastResult, payload_data: E
                 "body": body
             })
 
-        # 비동기 환경에서의 요청 처리를 위해 루프에서 실행하거나 httpx 사용 권장
-        # 여기서는 기존 requests 호환성을 위해 유지하되 timeout 설정
-
         response = None
         if method == "POST":
             # Body가 JSON 형태인지 일반 텍스트인지 판단 (기초적인 수준)
             if headers.get("Content-Type") == "application/json":
-                response = requests.post(full_url, json=body, headers=headers, timeout=7)
+                response = requests.post(full_url, json=body, headers=headers, timeout=TIMEOUT_CONFIG, allow_redirects=False)
             else:
-                response = requests.post(full_url, data=body, headers=headers, timeout=7)
+                response = requests.post(full_url, data=body, headers=headers, timeout=TIMEOUT_CONFIG, allow_redirects=False)
         elif method == "GET":
-            response = requests.get(full_url, params=body, headers=headers, timeout=7)
+            response = requests.get(full_url, params=body, headers=headers, timeout=TIMEOUT_CONFIG, allow_redirects=False)
         else:
             # 기타 메서드 처리
-            response = requests.request(method, full_url, data=body, headers=headers, timeout=7)
+            response = requests.request(method, full_url, data=body, headers=headers, timeout=TIMEOUT_CONFIG, allow_redirects=False)
 
         status_code = response.status_code
         response_text = response.text
@@ -92,22 +92,35 @@ async def run_exploit(target_url: str, dast_res: DastSastResult, payload_data: E
             is_exploited=is_exploited,
             http_status=status_code,
             execution_time_ms=exec_time_ms,
-            response_snippet=response_text[:1000], # 리포트용 슬라이싱
-            error_message=None
+            response_snippet=response_text[:1000]
         )
 
+    except requests.exceptions.ConnectTimeout:
+        err_msg = "❌ 서버 연결 타임아웃 (대상 서버가 응답하지 않음)"
+    except requests.exceptions.ReadTimeout:
+        err_msg = "❌ 서버 응답 읽기 타임아웃 (서버 처리가 너무 오래 걸림)"
+    except requests.exceptions.ConnectionError:
+        err_msg = "❌ 서버 연결 오류 (도메인 확인 불가 또는 포트 닫힘)"
+    except requests.exceptions.TooManyRedirects:
+        err_msg = "❌ 리디렉션 루프 발생"
     except Exception as e:
-        end_time = time.time()
-        err_msg = str(e)
-        if job_id:
-            await ws_manager.broadcast(job_id, {
-                "type": "error",
-                "message": f"PoC 실행 중 오류 발생: {err_msg}"
-            })
-        return ExecutionResult(
-            is_exploited=False,
-            http_status=0,
-            execution_time_ms=int((end_time - start_time) * 1000),
-            response_snippet="",
-            error_message=err_msg
-        )
+        err_msg = f"❌ PoC 실행 중 예외 발생: {str(e)}"
+
+    # 에러 발생 시 처리
+    end_time = time.time()
+    exec_time_ms = int((end_time - start_time) * 1000)
+    print(f"[DEBUG] {err_msg}")
+    
+    if job_id:
+        await ws_manager.broadcast(job_id, {
+            "type": "log",
+            "level": "error",
+            "message": err_msg
+        })
+        
+    return ExecutionResult(
+        is_exploited=False,
+        http_status=0,
+        execution_time_ms=exec_time_ms,
+        response_snippet=None
+    )
