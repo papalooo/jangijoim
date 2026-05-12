@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jangijoim"
+version = "0.1.0"
+description = "LLM-based web vulnerability diagnostic and automatic patch platform"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.4",
+    "starlette>=0.40.0",
+    "uvicorn>=0.32.0",
+    "typer>=0.12.0",
+    "rich>=13.8.0",
+    "requests==2.31.0",
+    "httpx==0.27.0",
+    "pydantic==2.9.0",
+    "python-multipart==0.0.9",
+    "google-genai==1.73.1",
+    "google-generativeai==0.8.6",
+    "python-dotenv==1.0.1",
+    "jinja2>=3.1.2",
+    "zaproxy",
+]
+
+[project.scripts]
+jangijoim = "main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "intelligence*", "mapping*", "scanner*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "templates/*.md", "*.yaml", "*.yml"]
