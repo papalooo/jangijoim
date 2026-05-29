@@ -6,7 +6,7 @@
 
 프로젝트는 4개의 주요 Role로 구성된 마이크로 모듈 구조를 따릅니다.
 
-1.  **`core/` (Role 1 - Orchestration):** 전체 파이프라인 제어, 공통 Pydantic 스키마(`schemas.py`), 데이터베이스 및 CLI(`cli.py`).
+1.  **`core/` (Role 1 - Orchestration):** 전체 파이프라인 제어, 공통 Pydantic 스키마(`schemas.py`), 데이터베이스, CLI(`cli.py`) 및 실시간 통신 관리(`ws_manager.py`).
 2.  **`scanner/` (Role 2 - Scanning & Execution):** Nuclei/Semgrep 등 스캐너 구동, HTTP 패킷 파싱, LLM 생성 페이로드 실행.
 3.  **`intelligence/` (Role 3 - LLM & Reporting):** LLM 프롬프트 엔지니어링, 정오탐 판별, 패치 생성, 보고서 렌더링.
 4.  **`mapping/` (Role 4 - Source Mapping):** DAST 결과와 소스코드 매핑 (AST 분석), 코드 패치 적용 및 롤백.
@@ -31,7 +31,8 @@
 
 ## 📝 작업 가이드라인 (AI용)
 
-1.  **수정 범위 제한:** 요청받은 Role의 디렉토리 외부 코드를 수정할 때는 반드시 `core/schemas.py`와의 호환성을 먼저 확인하십시오.
+1.  **공유 메모리 필독 및 최신화:** 모든 작업 시작 전 `PROGRESS.md`를 읽어 현재 프로젝트의 맥락을 파악하고, 작업 완료 후에는 반드시 `PROGRESS.md`에 수행 내용과 향후 계획을 기록하십시오.
+2.  **수정 범위 제한:** 요청받은 Role의 디렉토리 외부 코드를 수정할 때는 반드시 `core/schemas.py`와의 호환성을 먼저 확인하십시오.
 2.  **테스트 우선:** 코드 변경 후에는 `tests/` 폴더의 관련 테스트를 실행하거나, `target_app_mock/`을 활용하여 동작을 검증하십시오.
 3.  **문서화:** 새로운 함수나 클래스 추가 시 Google 스타일 Docstring을 작성하고, 타입 힌트를 생략하지 마십시오.
 4.  **에러 핸들링:** 파이프라인 중단 방지를 위해 적절한 `try-except` 블록을 사용하고, 실패 사유를 `ScanMetadata`의 `error_log`에 기록하십시오.

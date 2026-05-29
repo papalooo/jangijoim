@@ -19,6 +19,12 @@ class ScanStatus(str, Enum):
     FAILED = "FAILED"
     RECOVERY = "RECOVERY"         # 오류 복구 시도 중
 
+class AuthConfig(BaseModel):
+    """스캔 및 익스플로잇에 사용될 인증 설정"""
+    headers: Dict[str, str] = Field(default_factory=dict, description="공통적으로 추가할 HTTP 헤더 (예: Authorization)")
+    cookies: Dict[str, str] = Field(default_factory=dict, description="공통적으로 추가할 쿠키")
+    login_script_path: Optional[str] = Field(None, description="세션 획득을 위한 사전 실행 스크립트 경로")
+
 class ScanMetadata(BaseModel):
     """스캔 작업 자체의 고유 정보 및 시간 추적"""
     job_id: UUID = Field(default_factory=uuid4, description="스캔 작업의 고유 ID")
@@ -27,6 +33,7 @@ class ScanMetadata(BaseModel):
     start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     end_time: Optional[datetime] = Field(None)
     current_status: ScanStatus = Field(default=ScanStatus.QUEUED)
+    auth_config: Optional[AuthConfig] = Field(None, description="인증/세션 설정")
     error_log: Optional[str] = Field(None, description="파이프라인 실패 시 스택 트레이스 기록")
 
 # -----------------------------------------------------------------
@@ -88,7 +95,10 @@ class VerificationResult(BaseModel):
     is_vulnerable: bool = Field(..., description="최종 정오탐 여부 (True: 정탐, False: 오탐)")
     cvss_vector: Optional[str] = Field(None, description="CVSS v3.1 벡터 문자열 (예: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)")
     cvss_score: Optional[float] = Field(None, ge=0.0, le=10.0)
-    reason: str = Field(..., description="판단 근거 (마크다운 포맷 지원)")
+    confidence_score: float = Field(default=0.0, ge=0.0, le=1.0, description="판단 결과에 대한 LLM의 확신도 (0~1)")
+    reason: str = Field(..., description="판단 요약 (마크다운 포맷 지원)")
+    evidence_points: List[str] = Field(default_factory=list, description="판단 근거가 되는 구체적인 증거 포인트 목록")
+    reasoning_process: List[str] = Field(default_factory=list, description="사고 과정 (Chain of Thought) 단계별 기록")
     usage: LLMUsage = Field(default_factory=LLMUsage)
 
 class ExploitPayload(BaseModel):
@@ -106,7 +116,13 @@ class ExecutionResult(BaseModel):
     is_exploited: bool
     http_status: int
     execution_time_ms: float = Field(..., description="응답 소요 시간 (WAF 타임아웃 판별용)")
+    request_url: Optional[str] = Field(None, description="실제 전송된 전체 URL")
+    request_method: Optional[str] = Field(None, description="전송된 HTTP 메서드")
+    request_headers: Dict[str, str] = Field(default_factory=dict, description="전송된 HTTP 헤더")
+    request_body: Optional[str] = Field(None, description="전송된 HTTP 본문")
     response_snippet: Optional[str] = Field(None, description="정규식에 매칭된 치명적 응답 텍스트")
+    exploit_failure_reason: Optional[str] = Field(None, description="공격 재현 실패 시 구체적인 사유 (예: 정규식 미매칭, 403 차단 등)")
+    error_message: Optional[str] = Field(None, description="실행 중 발생한 에러 메시지")
 
 class PatchProposal(BaseModel):
     is_patch_generated: bool

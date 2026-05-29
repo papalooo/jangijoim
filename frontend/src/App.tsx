@@ -29,6 +29,8 @@ function App() {
         if (data.status === 'COMPLETED') {
           fetchScanData(jobId)
         }
+      } else if (data.type === 'vulnerabilities') {
+        setVulnerabilities(data.data)
       } else {
         addLog(data)
       }

@@ -11,3 +11,7 @@ google-generativeai==0.8.6
 python-dotenv==1.0.1
 jinja2>=3.1.2
 zaproxy
+tree-sitter
+tree-sitter-python
+tree-sitter-javascript
+tree-sitter-typescript

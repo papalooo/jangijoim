@@ -5,6 +5,7 @@ import json
 import asyncio
 import uuid
 import os
+from typing import List, Optional
 from rich.console import Console
 from rich.status import Status
 from rich.table import Table
@@ -20,7 +21,10 @@ API_BASE_URL = os.getenv("JANGIJOIM_API_URL", "http://127.0.0.1:8000")
 @app.command("start")
 def scan_start(
     target_url: str = typer.Option(..., help="타겟 URL (예: http://localhost:3000)"),
-    source_dir: str = typer.Option(..., help="소스코드 디렉토리 경로")
+    source_dir: str = typer.Option(..., help="소스코드 디렉토리 경로"),
+    auth_header: Optional[List[str]] = typer.Option(None, "--auth-header", "-H", help="추가 HTTP 헤더 (예: 'Authorization: Bearer ...')"),
+    auth_cookie: Optional[List[str]] = typer.Option(None, "--auth-cookie", "-C", help="추가 쿠키 (예: 'sessionid=abc')"),
+    login_script: Optional[str] = typer.Option(None, "--login-script", help="세션 획득용 로그인 스크립트 경로")
 ):
     """
     JANGIJOIM 보안 스캔 파이프라인을 시작합니다. (Docker 컨테이너 엔진 사용 권장)
@@ -29,10 +33,37 @@ def scan_start(
         f"[bold green]JANGIJOIM Pipeline 요청[/bold green]\nTarget: [cyan]{target_url}[/cyan]\nSource: [yellow]{source_dir}[/yellow]\nEngine: [white]{API_BASE_URL}[/white]",
         border_style="green"
     ))
+
+    # 인증 정보 구성
+    headers = {}
+    if auth_header:
+        for h in auth_header:
+            if ":" in h:
+                k, v = h.split(":", 1)
+                headers[k.strip()] = v.strip()
+    
+    cookies = {}
+    if auth_cookie:
+        for c in auth_cookie:
+            if "=" in c:
+                k, v = c.split("=", 1)
+                cookies[k.strip()] = v.strip()
+
+    auth_payload = {
+        "headers": headers,
+        "cookies": cookies,
+        "login_script_path": login_script
+    }
     
     # 1. FastAPI 서버에 스캔 시작 요청
     try:
-        resp = httpx.post(f"{API_BASE_URL}/scan/start", params={"target_url": target_url, "source_dir": source_dir}, timeout=10.0)
+        # payload를 JSON으로 전달 (AuthConfig 대응)
+        resp = httpx.post(
+            f"{API_BASE_URL}/scan/start", 
+            params={"target_url": target_url, "source_dir": source_dir},
+            json=auth_payload,
+            timeout=10.0
+        )
         resp.raise_for_status()
         job_id = resp.json()["job_id"]
         console.print(f"[bold blue]📡 스캔 작업이 접수되었습니다. ID: {job_id}[/bold blue]")

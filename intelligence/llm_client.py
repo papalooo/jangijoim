@@ -3,7 +3,7 @@ import json
 import asyncio
 from google import genai
 from google.genai import types
-from typing import List
+from typing import List, Optional
 from core.schemas import (
     MappedContext,
     VerificationResult,
@@ -20,7 +20,7 @@ from intelligence.prompts import (
 )
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-# 모델을 환경변수에서 가져오도록 변경 (기본값은 고성능 모델인 gemini-2.5-pro)
+# 모델을 환경변수에서 가져오도록 변경 (기본값: 고성능 모델인 gemini-2.5-pro)
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
 
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else genai.Client()
@@ -57,12 +57,18 @@ async def _call_gemini(system_prompt: str, user_prompt: str) -> dict:
                 raw_text = raw_text[3:-3].strip()
                 
             try:
-                return json.loads(raw_text)
+                parsed = json.loads(raw_text)
+                if isinstance(parsed, list) and len(parsed) > 0:
+                    return parsed[0] if isinstance(parsed[0], dict) else {"error": "Invalid list format"}
+                return parsed if isinstance(parsed, dict) else {"error": "Invalid JSON format"}
             except json.JSONDecodeError:
                 import re
                 # JSON 표준 이스케이프가 아닌 단일 백슬래시를 이중 백슬래시로 변환
                 fixed_text = re.sub(r'\\([^"\\/bfnrt])', r'\\\\\1', raw_text)
-                return json.loads(fixed_text)
+                parsed = json.loads(fixed_text)
+                if isinstance(parsed, list) and len(parsed) > 0:
+                    return parsed[0] if isinstance(parsed[0], dict) else {"error": "Invalid list format"}
+                return parsed if isinstance(parsed, dict) else {"error": "Invalid JSON format"}
             
         except Exception as e:
             error_str = str(e)
@@ -113,7 +119,10 @@ async def _run_triager(ctx: MappedContext) -> VerificationResult:
     "is_vulnerable": true 또는 false,
     "cvss_vector": "CVSS:3.1/AV:.../...",
     "cvss_score": 0.0~10.0,
-    "reason": "판단 근거 (한국어, 마크다운 허용)"
+    "confidence_score": 0.0~1.0,
+    "reason": "판단 요약 (한국어, 마크다운 허용)",
+    "evidence_points": ["증거 1", "증거 2"],
+    "reasoning_process": ["단계 1", "단계 2"]
 }}
 """
     result = await _call_gemini(TRIAGER_PROMPT, user_prompt)
@@ -121,7 +130,10 @@ async def _run_triager(ctx: MappedContext) -> VerificationResult:
         is_vulnerable=result.get("is_vulnerable", False),
         cvss_vector=result.get("cvss_vector"),
         cvss_score=result.get("cvss_score", 0.0),
+        confidence_score=result.get("confidence_score", 0.0),
         reason=result.get("reason", "분석 사유 누락"),
+        evidence_points=result.get("evidence_points", []),
+        reasoning_process=result.get("reasoning_process", []),
     )
 
 
@@ -129,44 +141,60 @@ async def _run_triager(ctx: MappedContext) -> VerificationResult:
 # [Agent 2] Red Teamer - PoC 익스플로잇 페이로드 생성
 # =====================================================================
 
-async def _run_red_teamer(ctx: MappedContext, triager_result: VerificationResult) -> ExploitPayload:
+async def run_red_teamer(ctx: MappedContext, triager_result: VerificationResult, feedback: str = None) -> ExploitPayload:
     """
     Triager가 정탐으로 판별한 경우, 패치 검증용 PoC 페이로드를 생성합니다.
-    오탐인 경우 더미 페이로드를 반환합니다.
+    실패 시 feedback을 받아 페이로드를 수정합니다.
     """
-    # 오탐이면 API 호출 없이 더미 반환 (비용 절감)
     if not triager_result.is_vulnerable:
         return ExploitPayload(
             method=ctx.dast_data.http_method,
             endpoint=ctx.dast_data.target_endpoint,
             body=ctx.dast_data.payload,
-            expected_success_regex="N/A (오탐으로 판별됨)",
+            expected_success_regex="N/A",
         )
 
+    feedback_part = f"\n[이전 공격 실패 결과 및 피드백]\n{feedback}\n이 결과를 바탕으로 페이로드를 수정하십시오." if feedback else ""
+    
     user_prompt = f"""
 Triager가 아래 취약점을 정탐으로 판별했습니다.
 패치 코드의 방어 로직을 검증하기 위한 PoC 익스플로잇 페이로드를 생성하십시오.
+{feedback_part}
 
 [취약점 정보]
 - 유형: {ctx.dast_data.vuln_type}
-- 엔드포인트: {ctx.dast_data.http_method} {ctx.dast_data.target_endpoint}
+- 추천 엔드포인트: {ctx.dast_data.target_endpoint}
+- 추천 메서드: {ctx.dast_data.http_method}
 - 기존 페이로드: {ctx.dast_data.payload}
 - 판별 근거: {triager_result.reason}
 
 [출력 JSON 형식]
 {{
-    "method": "POST",
-    "endpoint": "/api/login",
-    "headers": {{"Content-Type": "application/x-www-form-urlencoded"}},
-    "body": "페이로드 문자열",
-    "expected_success_regex": "공격 성공 판별 정규식"
+    "method": "메서드",
+    "endpoint": "엔드포인트 경로",
+    "headers": {{"Header-Name": "Value"}},
+    "body": "페이로드",
+    "expected_success_regex": "정규식"
 }}
 """
     result = await _call_gemini(RED_TEAMER_PROMPT, user_prompt)
+    
+    # LLM이 잘못된 엔드포인트를 생성하는 경우를 대비한 방어 로직
+    method = result.get("method", ctx.dast_data.http_method).upper()
+    endpoint = result.get("endpoint", ctx.dast_data.target_endpoint)
+    
+    # 엔드포인트가 외부 URL(http://...)을 포함하는 경우 경로만 추출
+    if endpoint.startswith("http"):
+        from urllib.parse import urlparse
+        endpoint = urlparse(endpoint).path
+        if not endpoint: endpoint = "/"
+    
+    headers = result.get("headers") if isinstance(result.get("headers"), dict) else {}
+
     return ExploitPayload(
-        method=result.get("method", ctx.dast_data.http_method),
-        endpoint=result.get("endpoint", ctx.dast_data.target_endpoint),
-        headers=result.get("headers", {}),
+        method=method,
+        endpoint=endpoint,
+        headers=headers,
         body=result.get("body"),
         expected_success_regex=result.get("expected_success_regex", ".*"),
     )
@@ -298,7 +326,7 @@ async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext], job
 
                 # Agent 2: Red Teamer
                 await log_to_ws(job_id, f"  └ [Red Teamer] 익스플로잇 페이로드 생성 중... ({idx + 1})")
-                red_teamer_payload = await _run_red_teamer(ctx, triager_result)
+                red_teamer_payload = await run_red_teamer(ctx, triager_result)
 
                 # Agent 3: Blue Teamer
                 await log_to_ws(job_id, f"  └ [Blue Teamer] 보안 패치 코드 작성 중... ({idx + 1})")
@@ -350,7 +378,7 @@ async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext], job
 # [Tests] 모듈 자체 테스트 코드
 # =====================================================================
 if __name__ == "__main__":
-    from core.schemas import DastSastResult, FinalReportState, ScanMetadata, VulnerabilityItem, RegressionTestResult
+    from core.schemas import DastSastResult, FinalReportState, ScanMetadata, VulnerabilityItem, RegressionTestResult, ExecutionResult
     from intelligence.reporter import generate_markdown_report
 
     async def run_pipeline_test():
@@ -419,6 +447,32 @@ if __name__ == "__main__":
             
             vulnerabilities = []
             for i, (ctx, llm_res) in enumerate(zip([mock_context1, mock_context2], llm_results)):
+                # [신규] 실제 실행 결과 시뮬레이션
+                if i == 0:
+                    execution = ExecutionResult(
+                        is_exploited=True,
+                        http_status=200,
+                        execution_time_ms=150.5,
+                        request_url=f"http://localhost:3000{ctx.dast_data.target_endpoint}",
+                        request_method=ctx.dast_data.http_method,
+                        request_headers={"Content-Type": "application/json", "User-Agent": "Gemini-Scanner"},
+                        request_body=ctx.dast_data.payload,
+                        response_snippet="HTTP/1.1 200 OK\nContent-Type: text/html\n\n[ERROR] sqlite3.OperationalError: unrecognized token near \"OR\"",
+                        exploit_failure_reason=None
+                    )
+                else:
+                    execution = ExecutionResult(
+                        is_exploited=False,
+                        http_status=403,
+                        execution_time_ms=50.2,
+                        request_url=f"http://localhost:3000{ctx.dast_data.target_endpoint}",
+                        request_method=ctx.dast_data.http_method,
+                        request_headers={"Content-Type": "application/json", "User-Agent": "Gemini-Scanner"},
+                        request_body=ctx.dast_data.payload,
+                        response_snippet="<html><head><title>403 Forbidden</title></head><body>Your request was blocked by WAF.</body></html>",
+                        exploit_failure_reason="보안 장비(WAF/IPS)에 의한 차단 의심 (HTTP 403)"
+                    )
+
                 # 모의 회귀 테스트 결과 (하나는 성공, 하나는 실패로 시뮬레이션 가능)
                 regression = RegressionTestResult(
                     is_mitigated=True if i == 0 else False,
@@ -430,6 +484,7 @@ if __name__ == "__main__":
                     dast_result=ctx.dast_data,
                     mapped_context=ctx,
                     llm_verification=llm_res,
+                    execution=execution,
                     regression_test=regression
                 ))
                 

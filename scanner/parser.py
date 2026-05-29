@@ -8,11 +8,20 @@ def parse_nuclei_results(raw_results: List[Dict[str, Any]]) -> List[DastSastResu
     """
     parsed_results = []
     seen_signatures = set()
+    info_count = 0
+    MAX_INFO_FINDINGS = 5 # Info 레벨은 최대 5개까지만 수용하여 노이즈 억제
 
     for item in raw_results:
         info = item.get("info", {})
         vuln_type = info.get("name", "Unknown Vulnerability")
         severity = info.get("severity", "info").capitalize()
+        
+        # Info 레벨 제한 로직
+        if severity in ["Info", "Informational"]:
+            if info_count >= MAX_INFO_FINDINGS:
+                continue
+            info_count += 1
+
         target_url = item.get("matched-at", "")
         extracted_results = item.get("extracted-results", [])
         payload = extracted_results[0] if extracted_results else "No explicit payload"

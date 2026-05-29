@@ -50,14 +50,56 @@
 ### 3. 🧠 지능형 보안 분석
 {% if item.llm_verification %}
 - **최종 판별:** {{ '🔴 정탐 (Vulnerable)' if item.llm_verification.triager_result.is_vulnerable else '🟢 오탐 (False Positive)' }}
+- **분석 확신도:** `{{ (item.llm_verification.triager_result.confidence_score * 100)|round(1) }}%`
 - **CVSS v3.1 스코어:** **{{ item.llm_verification.triager_result.cvss_score }}** (`{{ item.llm_verification.triager_result.cvss_vector }}`)
-- **분석 근거:**
+
+#### [판단 요약]
 > {{ item.llm_verification.triager_result.reason }}
+
+#### [핵심 증거 포인트 (Evidence)]
+{% for point in item.llm_verification.triager_result.evidence_points %}
+- ✅ {{ point }}
+{% endfor %}
+
+#### [심층 분석 과정 (Reasoning Process)]
+<details>
+<summary>논리적 추론 단계 보기 (Chain of Thought)</summary>
+
+{% for step in item.llm_verification.triager_result.reasoning_process %}
+{{ loop.index }}. {{ step }}
+{% endfor %}
+</details>
 {% else %}
 - 분석 데이터가 존재하지 않습니다.
 {% endif %}
 
-### 4. 🛠️ 시큐어 코딩 패치 제안
+### 4. 💥 공격 재현 및 성공 증적 (Proof of Exploit)
+{% if item.execution %}
+- **공격 성공 여부:** {{ '🔴 성공 (Exploited)' if item.execution.is_exploited else '⚪ 실패 (Failed)' }}
+{% if not item.execution.is_exploited and item.execution.exploit_failure_reason %}
+- **실패 사유:** `{{ item.execution.exploit_failure_reason }}`
+{% endif %}
+- **응답 속도:** `{{ item.execution.execution_time_ms }}ms` (HTTP `{{ item.execution.http_status }}`)
+
+#### [전송된 HTTP 요청 전문]
+```http
+{{ item.execution.request_method }} {{ item.execution.request_url }}
+{% for key, val in item.execution.request_headers.items() %}
+{{ key }}: {{ val }}
+{% endfor %}
+
+{{ item.execution.request_body if item.execution.request_body else '(No Body)' }}
+```
+
+#### [응답 증적 (Response Evidence)]
+```text
+{{ item.execution.response_snippet }}
+```
+{% else %}
+- 재현 테스트가 수행되지 않았습니다.
+{% endif %}
+
+### 5. 🛠️ 시큐어 코딩 패치 제안
 {% if item.llm_verification and item.llm_verification.blue_teamer_patch.is_patch_generated %}
 #### [패치 가이드]
 {% for step in item.llm_verification.blue_teamer_patch.remediation_steps %}

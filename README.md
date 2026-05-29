@@ -1,15 +1,18 @@
 # ♊ JANGIJOIM: LLM-Based Web Vulnerability Scanner & Auto-Patcher
 
-JANGIJOIM은 **LLM(Large Language Model) 기반의 지능형 웹 취약점 진단 및 자동 패치 플랫폼**입니다. DAST(Katana, Nuclei)와 SAST(Semgrep)를 결합하여 취약점을 탐지하고, Google Gemini Pro를 통해 정오탐 판별 및 소스코드 패치를 자동으로 수행합니다.
+JANGIJOIM은 **다양한 웹서비스에 대해 로컬 환경에 설치되어 작동하는 지능형 웹 취약점 진단 및 자동 패치 플랫폼**입니다. 
+소스코드에 SAST와 DAST를 실행하고, 두 결과를 매핑하여 LLM이 분석하기 좋은 데이터로 정제하는 과정을 거칩니다. 이후 LLM을 통해 정오탐 여부를 판별하고, 정탐에 대한 공격 페이로드를 직접 생성 및 수행하여 취약점의 근거를 확보한 뒤, 방어 코드 패치 제안까지 포함하는 상세 보고서를 자동으로 작성합니다.
 
 ---
 
 ## 🚀 빠른 시작 가이드 (Quick Start)
 
-본 프로젝트는 **Docker** 환경에서 실행되는 것을 원칙으로 합니다. 로컬 환경에 별도의 보안 도구를 설치할 필요가 없습니다.
+본 프로젝트는 **Docker** 환경에서 실행되는 것을 원칙으로 합니다. 로컬 환경에 복잡한 보안 도구를 직접 설치할 필요 없이 컨테이너 기반으로 동작합니다.
 
 ### 1. 운영체제별 레포지토리 클론 및 의존성 설치
-먼저, JANGIJOIM 레포지토리를 로컬에 클론하고 파이썬 의존성을 설치합니다.
+먼저, JANGIJOIM 레포지토리를 로컬에 클론합니다.
+
+> 💡 **로컬 파이썬 의존성 설치 안내:** `requirements.txt` 설치는 필수는 아니지만, IDE(VS Code 등)에서의 코드 자동 완성, 타입 체크 및 CLI 직접 제어를 위해 권장됩니다. 실제 보안 스캔 엔진은 Docker 컨테이너 내에서 독립적으로 실행됩니다.
 
 **🖥️ Windows (PowerShell) 환경**
 ```powershell
@@ -17,7 +20,9 @@ JANGIJOIM은 **LLM(Large Language Model) 기반의 지능형 웹 취약점 진�
 git clone https://github.com/papalooo/jangijoim.git
 cd jangijoim
 
-# 2. 로컬 파이썬 의존성 설치
+# 2. 로컬 개발 환경 구성 (권장)
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
@@ -27,7 +32,9 @@ pip install -r requirements.txt
 git clone https://github.com/papalooo/jangijoim.git
 cd jangijoim
 
-# 2. 로컬 파이썬 의존성 설치
+# 2. 로컬 개발 환경 구성 (권장)
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -92,11 +99,11 @@ python main.py scan --help
 - **Settings:** LLM 모델 설정 및 스캔 옵션(병렬 처리 등) 확인
 
 ### 2. 지능형 파이프라인 프로세스
-1. **Scanning:** Katana(JS 크롤링) + Nuclei(DAST) + Semgrep(SAST) 병렬 구동
-2. **Mapping:** 탐지된 취약점을 소스코드 위치와 매핑 (AST 분석)
-3. **Triage:** Gemini LLM이 코드를 분석하여 정탐/오탐 최종 판별
-4. **PoC Verify:** 생성된 페이로드를 실제 타겟에 전송하여 취약성 검증
-5. **Reporting:** 상세 마크다운 보고서 및 재실행 가능한 PoC 매니페스트 생성
+1. **Scanning:** 로컬 환경에서 타겟 애플리케이션에 대한 DAST(Nuclei, Katana) 및 SAST(Semgrep) 스캔 병렬 수행
+2. **Mapping & Refinement:** 탐지된 취약점과 소스코드를 AST 기반으로 매핑하고, LLM이 이해하고 학습하기 좋은 데이터 형태로 컨텍스트 정제
+3. **Triage:** 정제된 데이터를 바탕으로 Gemini LLM이 정탐/오탐 여부를 정확하게 판별
+4. **PoC Generation & Verification:** 정탐으로 판별된 건에 대해 공격 페이로드(PoC)를 생성하고 실제 타겟에 전송·수행하여 취약점의 확실한 근거 확보
+5. **Patch Proposal & Reporting:** 검증된 취약점의 방어 로직이 적용된 코드 패치를 제안하고, 전체 과정을 담은 상세 마크다운 보고서 작성
 
 ### 3. PoC 재실행 도구
 스캔 완료 후 생성된 `JANGIJOIM_Summary_*.md` 결과와 함께 생성된 매니페스트를 사용하여 특정 취약점을 다시 테스트할 수 있습니다.
@@ -110,7 +117,7 @@ python main.py poc run ./reports/poc_manifest_XXXXXX.json
 - **Backend:** FastAPI, Pydantic v2, Typer, SQLite
 - **Frontend:** React (Vite), TailwindCSS, Lucide React
 - **Security Tools:** Nuclei, Katana, Semgrep, OWASP ZAP
-- **AI Engine:** Google Gemini 1.5 / 2.0 Pro
+- **AI Engine:** Google Gemini 1.5 / 2.0 / 2.5 Pro
 
 ## 📝 참고 사항
 - **Source Mapping:** `--source-dir` 경로는 엔진 컨테이너 내부 경로인 `/app/juice-shop-src` 등을 사용하거나, 컨테이너에 적절히 마운트된 경로여야 합니다.

