@@ -15,7 +15,9 @@ class PythonASTMapper:
 
     def build_index(self):
         """소스코드 전체를 스캔하여 라우터 인덱스를 생성합니다."""
-        for root, _, files in os.walk(self.source_dir):
+        from mapping.ast_parser import IGNORE_DIRS
+        for root, dirs, files in os.walk(self.source_dir):
+            dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
             for file in files:
                 if file.endswith(".py"):
                     file_path = os.path.join(root, file)

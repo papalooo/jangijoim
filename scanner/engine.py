@@ -4,13 +4,10 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
-from zapv2 import ZAPv2
 from core.ws_manager import manager as ws_manager
 from datetime import datetime
 
-SCAN_TIMEOUT_SECONDS = 1200 # ZAP 스캔을 고려하여 타임아웃 연장
-ZAP_URL = os.getenv("ZAP_URL", "http://zap:8080")
-ZAP_API_KEY = os.getenv("ZAP_API_KEY", "jangijoim_zap_key")
+SCAN_TIMEOUT_SECONDS = 1200
 
 async def log_to_ws(job_id: Optional[str], message: str, level: str = "info"):
     if job_id:
@@ -72,8 +69,12 @@ async def run_nuclei(targets: List[str], headers: Optional[Dict[str, str]] = Non
     if not targets:
         return []
 
-    tags = "cve,sqli,xss,lfi,misconfig,takeover"
-    cmd = ["nuclei", "-tags", tags, "-silent", "-jsonl"]
+    # Juice Shop과 같은 취약 앱 진단을 위해 태그를 대폭 확장합니다.
+    # generic, vulnerabilities, exposure, default-login 등을 추가하여 탐지율 향상
+    tags = "cve,sqli,xss,lfi,rce,misconfig,takeover,vulnerability,exposure,default-login,generic"
+    # -c (concurrency), -bs (bulk-size), -rl (rate-limit) 옵션을 추가하여 속도 대폭 향상
+    # -it (interactive/automatic template) 대신 모든 기본 템플릿 활용을 유도
+    cmd = ["nuclei", "-tags", tags, "-silent", "-jsonl", "-c", "100", "-bs", "100", "-rl", "3000"]
     
     if headers:
         for key, value in headers.items():
@@ -113,72 +114,36 @@ async def run_nuclei(targets: List[str], headers: Optional[Dict[str, str]] = Non
     await log_to_ws(job_id, done_msg)
     return results
 
-async def run_zap(target_url: str, job_id: Optional[str] = None) -> List[Dict[str, Any]]:
-    """
-    OWASP ZAP을 사용하여 정밀 심층 스캔을 수행합니다. (Fallback용)
-    """
-    msg = f"🕵️‍♂️ [DAST] OWASP ZAP 심층 스캔 가동: {target_url}"
-    print(msg)
-    await log_to_ws(job_id, msg)
-    
-    try:
-        zap = ZAPv2(proxies={'http': ZAP_URL, 'https': ZAP_URL}, apikey=ZAP_API_KEY)
-        
-        # 1. Spider 시작
-        step1 = "  - [1/3] ZAP Spider 탐색 중..."
-        print(step1)
-        await log_to_ws(job_id, step1)
-        scan_id = zap.spider.scan(target_url)
-        while int(zap.spider.status(scan_id)) < 100:
-            await asyncio.sleep(5)
-            
-        # 2. AJAX Spider (SPA 대응 핵심)
-        step2 = "  - [2/3] ZAP AJAX Spider 정밀 탐색 중..."
-        print(step2)
-        await log_to_ws(job_id, step2)
-        zap.ajaxSpider.scan(target_url)
-        # AJAX Spider 상태 체크는 약간 다름
-        while True:
-            status = zap.ajaxSpider.status
-            if status != 'running':
-                break
-            await asyncio.sleep(10)
-            
-        # 3. Active Scan
-        step3 = "  - [3/3] ZAP Active Scan 취약점 공격 중..."
-        print(step3)
-        await log_to_ws(job_id, step3)
-        scan_id = zap.ascan.scan(target_url)
-        while int(zap.ascan.status(scan_id)) < 100:
-            await asyncio.sleep(10)
-            
-        # 결과 수집 (Alerts)
-        alerts = zap.core.alerts(baseurl=target_url)
-        done_msg = f"✅ [DAST] ZAP 스캔 완료: {len(alerts)}개의 경고 발견"
-        print(done_msg)
-        await log_to_ws(job_id, done_msg)
-        return alerts
-        
-    except Exception as e:
-        err_msg = f"❌ [DAST] ZAP API 통신 실패: {e}"
-        print(err_msg)
-        await log_to_ws(job_id, err_msg, "error")
-        return []
-
 async def run_semgrep(target_dir: str, job_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Semgrep SAST 스캐너를 실행합니다.
     """
-    msg = f"🔍 [SAST] Semgrep 코드 분석 중: {target_dir}"
+    msg = f"✍️ [SAST] Semgrep 코드 분석 중: {target_dir}"
     print(msg)
     await log_to_ws(job_id, msg)
     
-    cmd = [
-        "semgrep", "scan", target_dir, 
+    # OWASP Juice Shop (Node.js/TypeScript)에 맞춰 탐지 규칙 강화
+    configs = [
+        "p/ci",
+        "p/expressjs",
+        "p/javascript",
+        "p/typescript",
+        "p/owasp-top-ten",
+        "p/secrets"
+    ]
+    
+    cmd = ["semgrep", "scan"]
+    for config in configs:
+        cmd.extend(["--config", config])
+        
+    cmd.extend([
+        target_dir, 
         "--json", "--quiet",
         "--exclude", "node_modules",
+        "--exclude", "dist",
         "--exclude", ".git"
-    ]
+    ])
+    
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,

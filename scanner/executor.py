@@ -24,6 +24,8 @@ async def run_exploit(target_url: str, dast_res: DastSastResult, payload_data: E
 
     # AI가 제안한 엔드포인트와 메서드 사용
     endpoint = payload_data.endpoint if payload_data.endpoint else dast_res.target_endpoint
+    if not endpoint.startswith('/'):
+        endpoint = '/' + endpoint
     method = payload_data.method.upper() if payload_data.method else dast_res.http_method.upper()
 
     full_url = f"{target_url.rstrip('/')}{endpoint}"
@@ -128,6 +130,7 @@ async def run_exploit(target_url: str, dast_res: DastSastResult, payload_data: E
     except Exception as e:
         end_time = time.time()
         err_msg = str(e)
+        print(f"[DEBUG] ❌ PoC 실행 예외 발생: {type(e).__name__}: {err_msg}")
         if job_id:
             await ws_manager.broadcast(job_id, {
                 "type": "error",

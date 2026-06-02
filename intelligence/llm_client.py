@@ -170,17 +170,20 @@ Triager가 아래 취약점을 정탐으로 판별했습니다.
 
 [출력 JSON 형식]
 {{
-    "method": "메서드",
-    "endpoint": "엔드포인트 경로",
+    "method": "GET, POST, PUT, DELETE 중 택 1",
+    "endpoint": "엔드포인트 경로 (예: /api/login)",
     "headers": {{"Header-Name": "Value"}},
-    "body": "페이로드",
+    "body": "페이로드 문자열",
     "expected_success_regex": "정규식"
 }}
 """
     result = await _call_gemini(RED_TEAMER_PROMPT, user_prompt)
     
     # LLM이 잘못된 엔드포인트를 생성하는 경우를 대비한 방어 로직
-    method = result.get("method", ctx.dast_data.http_method).upper()
+    raw_method = result.get("method", ctx.dast_data.http_method).upper()
+    valid_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"]
+    method = raw_method if raw_method in valid_methods else "GET"
+    
     endpoint = result.get("endpoint", ctx.dast_data.target_endpoint)
     
     # 엔드포인트가 외부 URL(http://...)을 포함하는 경우 경로만 추출

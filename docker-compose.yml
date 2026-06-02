@@ -12,31 +12,12 @@ services:
     command: python main.py serve --host 0.0.0.0 --port 8000
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - ZAP_URL=http://zap:8080
-      - ZAP_API_KEY=jangijoim_zap_key
       - PYTHONUNBUFFERED=1
     networks:
       - sec-network
     depends_on:
       juice-shop:
         condition: service_healthy
-      zap:
-        condition: service_healthy
-
-  # OWASP ZAP 스캐너 데몬 (Tier 2 Deep Scan용)
-  zap:
-    image: zaproxy/zap-stable
-    container_name: gemini_zap
-    restart: always
-    command: zap.sh -daemon -host 0.0.0.0 -port 8080 -config api.key=jangijoim_zap_key -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true
-    networks:
-      - sec-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
 
   # 실전형 취약점 테스트베드: OWASP Juice Shop
   juice-shop:

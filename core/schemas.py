@@ -34,6 +34,7 @@ class ScanMetadata(BaseModel):
     end_time: Optional[datetime] = Field(None)
     current_status: ScanStatus = Field(default=ScanStatus.QUEUED)
     auth_config: Optional[AuthConfig] = Field(None, description="인증/세션 설정")
+    quick_scan: bool = Field(default=False, description="ZAP 정밀 스캔을 생략하고 빠르게 검사할지 여부")
     error_log: Optional[str] = Field(None, description="파이프라인 실패 시 스택 트레이스 기록")
 
 # -----------------------------------------------------------------

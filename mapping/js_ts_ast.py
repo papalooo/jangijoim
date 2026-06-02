@@ -20,8 +20,10 @@ class JSTSMapper:
 
     def build_index(self):
         """소스 디렉토리를 순회하며 라우터 패턴을 인덱싱합니다."""
+        from mapping.ast_parser import IGNORE_DIRS
         self.index = []
-        for root, _, files in os.walk(self.source_dir):
+        for root, dirs, files in os.walk(self.source_dir):
+            dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
             for file in files:
                 if file.endswith(('.js', '.ts')):
                     self._parse_file(os.path.join(root, file))

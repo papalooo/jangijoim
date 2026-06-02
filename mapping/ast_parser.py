@@ -14,7 +14,7 @@ from mapping.tree_sitter_mapper import TreeSitterMapper
 
 # 확장자별 검색 대상 설정
 SUPPORTED_EXTENSIONS = {".py", ".js", ".ts", ".java", ".go", ".php", ".rb", ".cs"}
-IGNORE_DIRS = {"node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build"}
+IGNORE_DIRS = {"node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build", ".github", ".workflows", ".devcontainer", "test", "tests", "docs"}
 
 # 언어 감지 맵
 EXT_TO_LANG = {

