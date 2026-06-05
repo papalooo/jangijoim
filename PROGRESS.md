@@ -19,6 +19,16 @@
 
 ## ✅ 완료된 작업 (Recent Achievements)
 
+### 2026-06-05
+- **[Project] 루트 디렉토리 정리 및 구조 최적화**
+    *   `scripts/`, `tests/`, `examples/` 디렉토리를 생성하여 흩어져 있던 유틸리티 및 테스트 코드 정리.
+    *   불필요한 로그 파일(`error.log`), 임시 파일(`package-lock.json`), 중복 Skill 정의 파일 삭제.
+    *   최근 스캔 결과 요약 파일들을 `reports/` 디렉토리로 이동.
+- **[Scan] 대규모 취약점 진단 수행 및 PoC 생성 검증**
+    *   SAST 기반 Shell Injection, SQL Injection, JWT Hardcoded Secret 등 30건 이상의 취약점 탐지 및 분석 수행.
+    *   특히 `tainted-sql-string` 유형에 대해 LLM이 유효한 PoC 페이로드를 생성하고 검증하는 데 성공.
+    *   DOM EventListener 관련 오탐(False Positive) 판별 로직의 정확도 확인.
+
 ### 2026-05-18
 - **[Core] 위험도 기반 취약점 우선순위화(Prioritization) 도입**
     *   `core/orchestrator.py`: LLM 분석 대상 선정 시 Critical/High 위험도를 우선하도록 정렬 로직 추가.
@@ -54,10 +64,6 @@
     *   사용자 입력이 어떤 변수로 할당되는지 LLM에게 전달할 맥락(Context) 정보 강화.
 3.  **[Exploit 고도화] 익스플로잇 실행 엔진 보완**
     *   `requests`를 대체할 세션/쿠키/브라우저 환경 대응 익스플로잇 엔진(httpx/playwright) 도입.
-4.  **[Validation 자동화] 패치 검증 파이프라인 통합**
-    *   패치 적용 후 생성된 PoC를 재실행하여 '실패'를 검증하는 회귀 테스트 완전 자동화.
-5.  **[Feedback Loop] 자가 수정(Self-healing) 익스플로잇**
-    *   PoC 실행 실패 시 결과를 피드백하여 LLM이 페이로드를 스스로 수정하도록 유도.
 
 ---
-*마지막 업데이트: 2026-05-18 (Gemini CLI)*
+*마지막 업데이트: 2026-06-05 (Gemini CLI)*

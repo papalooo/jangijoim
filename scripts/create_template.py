@@ -136,16 +136,12 @@ def create_template():
     vuln_table.cell(2, 0).text = 'PoC 페이로드'
     vuln_table.cell(2, 1).text = '{% if item.llm_verification and item.llm_verification.red_teamer_payload %}{{ item.llm_verification.red_teamer_payload.method }} {{ item.llm_verification.red_teamer_payload.endpoint }}\n{{ item.llm_verification.red_teamer_payload.body }}{% else %}-{% endif %}'
     
-    # 4행: 패치 여부
-    vuln_table.cell(3, 0).text = '자동 패치 결과'
-    vuln_table.cell(3, 1).text = '{% if item.regression_test %}{% if item.regression_test.is_mitigated %}성공 (HTTP {{ item.regression_test.http_status_after_patch }}){% else %}실패 (HTTP {{ item.regression_test.http_status_after_patch }}){% endif %}{% else %}미수행{% endif %}'
-    
-    # 5행: 영향도/설명
-    vuln_table.cell(4, 0).text = '상세 설명'
-    vuln_table.cell(4, 1).text = '{% if item.llm_verification %}{{ item.llm_verification.triager_result.reason }}{% else %}스캐너가 식별한 잠재적 취약점입니다.{% endif %}'
+    # 4행: 영향도/설명
+    vuln_table.cell(3, 0).text = '상세 설명'
+    vuln_table.cell(3, 1).text = '{% if item.llm_verification %}{{ item.llm_verification.triager_result.reason }}{% else %}스캐너가 식별한 잠재적 취약점입니다.{% endif %}'
 
     # 헤더 열 볼드 처리
-    for i in range(5):
+    for i in range(4):
         for paragraph in vuln_table.cell(i, 0).paragraphs:
             for run in paragraph.runs:
                 run.font.bold = True
@@ -153,6 +149,19 @@ def create_template():
     doc.add_paragraph('\n')
     
     p_item_end = doc.add_paragraph()
+    p_item_end.add_run('{% endfor %}')
+    
+    p_group_end = doc.add_paragraph()
+    p_group_end.add_run('{% endfor %}')
+
+    # Save
+    template_dir = os.path.join("intelligence", "templates")
+    os.makedirs(template_dir, exist_ok=True)
+    doc.save(os.path.join(template_dir, "report_template.docx"))
+
+if __name__ == "__main__":
+    create_template()
+agraph()
     p_item_end.add_run('{% endfor %}')
     
     p_group_end = doc.add_paragraph()

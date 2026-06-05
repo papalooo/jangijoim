@@ -18,9 +18,7 @@ def prepare_report_data(state: FinalReportState):
         "total": len(vulnerabilities),
         "severity": defaultdict(int),
         "tp": 0,
-        "fp": 0,
-        "patch_success": 0,
-        "patch_fail": 0
+        "fp": 0
     }
     
     poc_manifest = {
@@ -55,16 +53,10 @@ def prepare_report_data(state: FinalReportState):
                     "body": exploit.body,
                     "expected_success_regex": exploit.expected_success_regex
                 })
-                
-                if item.regression_test and item.regression_test.is_mitigated:
-                    stats["patch_success"] += 1
-                elif item.regression_test:
-                    stats["patch_fail"] += 1
             else:
                 stats["fp"] += 1
     
     stats["tp_ratio"] = round((stats["tp"] / stats["total"] * 100), 1) if stats["total"] > 0 else 0
-    stats["patch_success_rate"] = round((stats["patch_success"] / stats["tp"] * 100), 1) if stats["tp"] > 0 else 0
     
     display_groups = []
     for key, items in grouped_vulns.items():

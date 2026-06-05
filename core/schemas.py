@@ -140,11 +140,6 @@ class LlmVerification(BaseModel):
     qa_passed: bool
     qa_feedback: str
 
-class RegressionTestResult(BaseModel):
-    is_mitigated: bool = Field(..., description="패치 후 취약점 차단 여부 (True면 방어 성공)")
-    http_status_after_patch: int = Field(..., description="패치 후 동일 페이로드 전송 시의 상태 코드 (예: 403 Forbidden)")
-    rollback_successful: bool = Field(..., description="테스트 후 원본 코드로의 롤백 성공 여부")
-
 # -----------------------------------------------------------------
 # [Phase 5] 최종 보고서 상태 (Role 1 -> Role 3)
 # -----------------------------------------------------------------
@@ -155,7 +150,6 @@ class VulnerabilityItem(BaseModel):
     mapped_context: Optional[MappedContext] = None
     llm_verification: Optional[LlmVerification] = None
     execution: Optional[ExecutionResult] = None
-    regression_test: Optional[RegressionTestResult] = None
 
 class FinalReportState(BaseModel):
     """비동기 큐에서 최종적으로 관리되는 마스터 상태 객체"""
@@ -165,16 +159,3 @@ class FinalReportState(BaseModel):
     metadata: ScanMetadata
     # 다중 취약점 지원을 위해 리스트 구조로 변경
     vulnerabilities: List[VulnerabilityItem] = Field(default_factory=list)
-
-    # 하위 호환성 유지를 위한 기존 필드 (필요 시 첫 번째 항목 참조)
-    @property
-    def dast_result(self) -> Optional[DastSastResult]:
-        return self.vulnerabilities[0].dast_result if self.vulnerabilities else None
-
-    @property
-    def mapped_context(self) -> Optional[MappedContext]:
-        return self.vulnerabilities[0].mapped_context if self.vulnerabilities else None
-
-    @property
-    def llm_verification(self) -> Optional[LlmVerification]:
-        return self.vulnerabilities[0].llm_verification if self.vulnerabilities else None

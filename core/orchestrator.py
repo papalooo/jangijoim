@@ -24,7 +24,7 @@ from core.schemas import (
     ScanMetadata, ScanStatus, FinalReportState,
     DastSastResult, MappedContext, VerificationResult,
     LlmVerification,
-    ExploitPayload, ExecutionResult, PatchProposal, RegressionTestResult,
+    ExploitPayload, ExecutionResult, PatchProposal,
     VulnerabilityItem, AuthConfig
 )
 

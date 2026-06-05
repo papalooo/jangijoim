@@ -381,7 +381,7 @@ async def verify_vulnerabilities_batch(mapped_contexts: List[MappedContext], job
 # [Tests] 모듈 자체 테스트 코드
 # =====================================================================
 if __name__ == "__main__":
-    from core.schemas import DastSastResult, FinalReportState, ScanMetadata, VulnerabilityItem, RegressionTestResult, ExecutionResult
+    from core.schemas import DastSastResult, FinalReportState, ScanMetadata, VulnerabilityItem, ExecutionResult
     from intelligence.reporter import generate_markdown_report
 
     async def run_pipeline_test():

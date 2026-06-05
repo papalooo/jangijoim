@@ -90,20 +90,34 @@ python main.py scan --help
 
 ---
 
+## 📁 프로젝트 구조 (Project Structure)
+
+- **`core/`**: 파이프라인 제어 타워, 공통 데이터 스키마 및 CLI 정의 (Role 1)
+- **`scanner/`**: Nuclei/Semgrep 기반 스캔 수행 및 결과 파싱 (Role 2)
+- **`intelligence/`**: LLM 엔진, 정오탐 판별, PoC 생성 및 보고서 렌더링 (Role 3)
+- **`mapping/`**: AST(Tree-sitter) 기반 소스코드 매핑 및 패치 적용 (Role 4)
+- **`frontend/`**: React/Tailwind 기반 실시간 대시보드 웹 UI
+- **`scripts/`**: 보고서 템플릿 생성 및 문서 처리 유틸리티
+- **`tests/`**: 시스템 통합 테스트 및 단위 테스트 코드
+- **`examples/`**: 사전 로그인 스크립트 등 사용 예제
+- **`reports/`**: 생성된 보안 보고서(MD, DOCX) 및 PoC 매니페스트 저장소
+
+---
+
 ## 🖥 주요 기능 활용법
 
 ### 1. 실시간 대시보드 (Web UI)
 브라우저에서 `http://localhost:8000`에 접속하면 실시간으로 진행되는 공격 과정과 탐지 결과를 확인할 수 있습니다.
-- **Dashboard:** 현재 진행 중인 스캔 로그 및 취약점 리스트 표시
-- **Scan History:** 과거 스캔 기록 조회 및 결과 재확인
-- **Settings:** LLM 모델 설정 및 스캔 옵션(병렬 처리 등) 확인
+- **Dashboard:** 현재 진행 중인 스캔 단계(Stepper), 실시간 터미널 로그 및 탐지 취약점 현황 표시
+- **Scan History:** 과거 스캔 기록 조회 및 상세 결과 재확인
+- **Settings:** LLM 모델 설정(Gemini Pro 등) 및 스캔 옵션 관리
 
 ### 2. 지능형 파이프라인 프로세스
-1. **Scanning:** 로컬 환경에서 타겟 애플리케이션에 대한 DAST(Nuclei, Katana) 및 SAST(Semgrep) 스캔 병렬 수행
-2. **Mapping & Refinement:** 탐지된 취약점과 소스코드를 AST 기반으로 매핑하고, LLM이 이해하고 학습하기 좋은 데이터 형태로 컨텍스트 정제
-3. **Triage:** 정제된 데이터를 바탕으로 Gemini LLM이 정탐/오탐 여부를 정확하게 판별
-4. **PoC Generation & Verification:** 정탐으로 판별된 건에 대해 공격 페이로드(PoC)를 생성하고 실제 타겟에 전송·수행하여 취약점의 확실한 근거 확보
-5. **Patch Proposal & Reporting:** 검증된 취약점의 방어 로직이 적용된 코드 패치를 제안하고, 전체 과정을 담은 상세 마크다운 보고서 작성
+1. **Scanning:** DAST(Nuclei, Katana) 및 SAST(Semgrep) 스캔을 병렬로 수행하여 잠재적 취약점 식별
+2. **Mapping & Refinement:** 탐지된 취약점과 소스코드를 AST 기반으로 정밀 매핑하고, LLM 분석을 위한 최적의 컨텍스트 생성
+3. **Triage:** Gemini LLM의 추론 능력을 활용하여 높은 정확도로 정탐/오탐(TP/FP) 판별
+4. **PoC Generation & Verification:** 정탐 건에 대해 유효한 공격 페이로드(PoC)를 생성하고 실제 타겟에 수행하여 증거 확보
+5. **Patch Proposal & Reporting:** 취약점 방어 코드를 자동으로 생성하고, 상세 내용을 담은 보고서(Markdown 및 Word .docx)를 `reports/` 디렉토리에 생성
 
 ### 3. PoC 재실행 도구
 스캔 완료 후 생성된 `JANGIJOIM_Summary_*.md` 결과와 함께 생성된 매니페스트를 사용하여 특정 취약점을 다시 테스트할 수 있습니다.
